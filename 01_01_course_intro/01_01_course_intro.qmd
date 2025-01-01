@@ -1,0 +1,264 @@
+---
+title: Introduction to the course
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format: clean-revealjs
+html-math-method:
+  method: mathjax
+  url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+author:
+  - name: Prof. Brenton Kenkel
+    email: brenton.kenkel@vanderbilt.edu
+    affiliations: Vanderbilt University
+date: 2025-01-06
+self-contained: true
+---
+
+```{css}
+.sourceCode {
+  font-size: 1.25em;
+}
+```
+
+## Today's agenda
+
+1.  Introduce myself and the course
+2.  Go through the syllabus
+3.  Review necessary software
+
+# Introductions
+
+## About me
+
+Some background:
+
+*   "Kenkel" rhymes with "sprinkle" 🧁
+*   Grew up in Northern Kentucky, near Cincinnati
+*   Philosophy and political science major at University of Kentucky (2008)
+*   PhD in political science from University of Rochester (2014)
+*   On the Vanderbilt faculty since 2014
+*   Research on international relations and political economy
+*   Teaches classes on international relations, game theory, statistics
+
+Email: <brenton.kenkel@gmail.com> (preferred over Vanderbilt email)
+
+Office hours: Tuesday 2-4pm, Commons 326, no appointment needed
+
+## About PSCI 2301
+
+The main topic of this course is [causal inference]{.alert}
+
+Political scientists, policy analysts, decision makers, regular people ---  
+all need to answer causal questions
+
+*   How much does a party help (or hurt) its general election chances by nominating a moderate?
+*   How much do get-out-the-vote mailers increase turnout?
+*   To what extent do border walls reduce contraband smuggling?
+*   How much will a law degree increase your earning potential?
+*   Will eating bacon give you cancer?
+
+We'll study the [statistical approach]{.alert} to answering questions like these
+
+## Why causal questions are hard to answer
+
+Does following the news closely make a person more likely to have extreme political views?
+
+```{r}
+#| cache: true
+
+library("tidyverse")
+library("gssr")  # see https://kjhealy.github.io/gssr/ for installation instructions
+gss_get_yr(2022) |>
+  select(news, polviews) |>
+  drop_na() |>
+  mutate(news = fct_rev(as_factor(news)),
+         moderate = as.numeric(polviews == 4),
+         extreme = as.numeric(polviews %in% c(1, 7))) |>
+  group_by(news) |>
+  summarize(pct_moderate = mean(moderate),
+            pct_extreme = mean(extreme)) |>
+  pivot_longer(starts_with("pct")) |>
+  mutate(name = case_match(name,
+                           "pct_extreme" ~ "Extremely liberal or conservative",
+                           "pct_moderate" ~ "Moderate")) |>
+  ggplot(aes(x = value, y = news)) +
+  geom_bar(stat = "identity", color = "black", fill = "lightblue", alpha = 0.5) +
+  facet_wrap(~ name, nrow = 1, scales = "free_x") +
+  labs(x = "Proportion of respondents",
+       y = "News reading frequency",
+       title = "News reading and political extremism in the 2022 GSS") +
+  theme_bw(base_size = 16)
+```
+
+## Why causal questions are hard to answer
+
+Why can't we just compare those who follow the news to those who don't?
+
+. . .
+
+What we want to know: If we took the **same people** and changed their news consumption, how would their views change?
+
+"Correlation isn't causation"  
+$\leftrightarrow$ The news followers and non-followers are **different people**
+
+. . .
+
+One correlation, many viable explanations
+
+1.  Maybe following the news really does polarize people
+2.  Maybe people who are already extreme are more interested in the news
+3.  Maybe some other factors---education, income, personality type---shape both news consumption and extremism
+4.  Maybe all of these are true!
+
+## What we're going to do
+### The statistical approach to causal inference
+
+We can't observe the same people as news followers and non-followers
+
+But we can try to compare groups that are as similar as possible
+
+::: {.incremental}
+*   Experimental: Randomly assign who does and doesn't follow
+*   Observational: Measure confounding variables and use statistical adjustments to eliminate their influence
+*   Hybrid: Isolate **seemingly random** differences in news consumption
+:::
+
+::: {.fragment}
+Most current research --- and much of this course --- uses the hybrid approach to causal inference
+:::
+
+
+# The syllabus
+
+## Is this course right for you?  A checklist
+
+- [ ] You're interested in using data to answer causal questions
+- [ ] You have a working familiarity with R from DS 1000 or PSCI 2300
+- [ ] You're comfortable with math at the level of high school algebra
+- [ ] You're willing to invest substantial time out of the classroom to learn the material
+- [ ] You're eager to write a research paper that will require significant work and advance planning
+- [ ] You're okay with uncertainty and are willing to revise your beliefs
+
+## Readings
+
+:::: {.columns}
+
+::: {.column width="60%"}
+Required book: *Mastering 'Metrics*
+
+Typical weekly reading schedule
+
+1.  Chapter of *MM*, or similar stats content
+2.  Polisci article applying those methods
+
+How I'd approach weekly readings
+
+*   Skim all before Monday's class
+*   Polisci article first, then stats stuff
+*   Note questions for class/Brightspace discussions
+*   Go back and do a deeper reread after Wednesday's class
+:::
+
+::: {.column width="40%"}
+![](mm.jpg){width=80% fig-align="center"}
+:::
+
+::::
+
+## Problem sets
+
+Five sets, roughly evenly spaced over the semester
+
+Not just code --- you'll need to think about causal relationships
+
+Learning by doing $\leadsto$ expect a **substantial time investment** on each set
+
+Lowest score dropped, other four each worth 12.5% of grade
+
+One-time-use, 72-hour extension policy
+
+Peer collaboration allowed, but turn in your own writeup, no rote copying
+
+## Final research project
+
+You'll use statistics to answer a causal question about politics
+
+Final paper will be a scientific report, in the style of the polisci readings
+
+No page requirement, but I imagine you'll end up around 20 pages
+
+*   February 28: Proposal for topics and data (10% of final grade)
+*   March 28: Complete first draft (10%)
+*   April 14/16: In-class presentation (5%)
+*   April 23: Final paper (20%) and revision memo (5%)
+
+Start looking into topics and data availability asap  
+(seriously, do not procrastinate on this)
+
+## Generative AI policy
+
+You can use ChatGPT, vanderbilt.ai, etc., in any capacity
+
+Think of AI as a complement to learning, not a substitute
+
+You are ultimately responsible for whatever you turn in
+
+My personal experiences with generative AI in a stats/research setting
+
+*   Writing code 🙂 (especially with Copilot)
+*   Answering code questions 🙂
+*   Critiquing and correcting my prose writing 😐
+*   Writing prose on its own 😖
+*   Coming up with research topic ideas 🤮
+
+## Extra credit
+
+Ways to earn up to 3% extra credit
+
+1.  Post questions on Brightspace discussions
+
+2.  Answer other people's questions on Brightspace discussions
+
+3.  Regularly ask questions in class
+
+
+# Software
+
+## R and RStudio
+
+R download: <https://cran.rstudio.com/>
+
+RStudio download: <https://posit.co/download/rstudio-desktop/>
+
+Required R setup: (only need to run once)
+
+```{r}
+#| echo: true
+#| eval: false
+#| code-line-numbers: false
+install.packages("tidyverse")
+install.packages("tinytex")
+tinytex::install_tinytex()
+```
+
+Pretty much all stats in this course could also be done in Python, but R still most common in political science
+
+## Quarto
+
+Quarto $\approx$ R Markdown + additional features + Python compatibility
+
+Download link: <https://quarto.org/docs/download/>
+
+You'll complete problem sets using Quarto
+
+Lecture slide Quarto code at <https://github.com/brentonk/psci2301_slides>
+
+
+# Wrapping up
+
+## To do for next time
+
+1.  Get all software installed
+
+2.  Double check that you can render `hello_world.qmd` to PDF
+
+3.  If you need an R refresher, look at intro R notes from PSCI 2300 posted for this week on Brightspace
