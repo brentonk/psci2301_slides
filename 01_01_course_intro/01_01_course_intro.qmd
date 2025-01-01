@@ -13,13 +13,13 @@ date: 2025-01-06
 self-contained: true
 ---
 
+## Today's agenda
+
 ```{css}
 .sourceCode {
   font-size: 1.25em;
 }
 ```
-
-## Today's agenda
 
 1.  Introduce myself and the course
 2.  Go through the syllabus
@@ -36,8 +36,7 @@ Some background:
 *   Philosophy and political science major at University of Kentucky (2008)
 *   PhD in political science from University of Rochester (2014)
 *   On the Vanderbilt faculty since 2014
-*   Research on international relations and political economy
-*   Teaches classes on international relations, game theory, statistics
+*   Research + classes on international relations, game theory, statistics
 
 Email: <brenton.kenkel@gmail.com> (preferred over Vanderbilt email)
 
@@ -97,8 +96,7 @@ Why can't we just compare those who follow the news to those who don't?
 
 What we want to know: If we took the **same people** and changed their news consumption, how would their views change?
 
-"Correlation isn't causation"  
-$\leftrightarrow$ The news followers and non-followers are **different people**
+But the news followers and non-followers are **different people**
 
 . . .
 
@@ -143,8 +141,6 @@ Most current research --- and much of this course --- uses the hybrid approach t
 :::: {.columns}
 
 ::: {.column width="60%"}
-Required book: *Mastering 'Metrics*
-
 Typical weekly reading schedule
 
 1.  Chapter of *MM*, or similar stats content
@@ -159,6 +155,8 @@ How I'd approach weekly readings
 :::
 
 ::: {.column width="40%"}
+Required book:
+
 ![](mm.jpg){width=80% fig-align="center"}
 :::
 
