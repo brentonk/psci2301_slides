@@ -7,19 +7,14 @@ html-math-method:
   url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
 author:
   - name: Prof. Brenton Kenkel
-    email: brenton.kenkel@vanderbilt.edu
+    email: brenton.kenkel@gmail.com
     affiliations: Vanderbilt University
 date: 2025-01-06
 self-contained: true
 ---
 
-## Today's agenda
 
-```{css}
-.sourceCode {
-  font-size: 1.25em;
-}
-```
+## Today's agenda
 
 1.  Introduce myself and the course
 2.  Go through the syllabus
@@ -103,7 +98,7 @@ But the news followers and non-followers are **different people**
 One correlation, many viable explanations
 
 1.  Maybe following the news really does polarize people
-2.  Maybe people who are already extreme are more interested in the news
+2.  Maybe already-extreme people are more interested in the news
 3.  Maybe some other factors---education, income, personality type---shape both news consumption and extremism
 4.  Maybe all of these are true!
 
@@ -140,6 +135,12 @@ Most current research --- and much of this course --- uses the hybrid approach t
 
 :::: {.columns}
 
+::: {.column width="40%"}
+Required book:
+
+![](mm.jpg){width=80% fig-align="center"}
+:::
+
 ::: {.column width="60%"}
 Typical weekly reading schedule
 
@@ -152,12 +153,6 @@ How I'd approach weekly readings
 *   Polisci article first, then stats stuff
 *   Note questions for class/Brightspace discussions
 *   Go back and do a deeper reread after Wednesday's class
-:::
-
-::: {.column width="40%"}
-Required book:
-
-![](mm.jpg){width=80% fig-align="center"}
 :::
 
 ::::

@@ -10,4 +10,4 @@ contributes:
         side: left
       slide-number: true
       date-format: long
-
+      code-line-numbers: false
