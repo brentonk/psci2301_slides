@@ -1,2 +1,6 @@
-# Quarto caches
+# Quarto cache
 */*_cache/
+
+# Quarto generated files
+*.html
+*/*_files/

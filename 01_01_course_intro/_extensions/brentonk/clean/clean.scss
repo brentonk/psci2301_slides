@@ -25,7 +25,7 @@ Note: This theme uses the Roboto font family, which it imports from Google
   from the choice set if the family is installed locally.
 */
 @import url('https://fonts.googleapis.com/css2?family=Fira+Sans:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
-@import url('https://iosevka-webfonts.github.io/iosevka/Iosevka.css');
+//@import url('https://iosevka-webfonts.github.io/iosevka/Iosevka.css');
 
 $font-family-sans-serif: "Fira Sans", sans-serif !default;
 $presentation-heading-font: "Fira Sans", sans-serif !default;
@@ -126,6 +126,7 @@ $selection-bg: #26351c !default;
 
 .alert {
   color: $accent2;
+  font-weight: bolder;
 }
 
 .fg {
@@ -335,7 +336,31 @@ $selection-bg: #26351c !default;
   font-variant-ligatures: none;
 }
 
-.sourceCode {
+.reveal pre code, .reveal pre.sourceCode code, .cell-output-stdout pre code {
   font-family: 'Iosevka Web', monospace;
-  font-size: 22px;
+  font-variant-ligatures: none;
+  font-size: 20px;
+}
+
+.reveal .cell-output.cell-output-stdout pre code {
+  line-height: 25px;
+}
+
+.reveal div.sourceCode.cell-code {
+  margin-top: 1.25em;
+}
+
+.reveal div.cell-output.cell-output-stdout {
+  margin-top: 0.4em;
+}
+
+// Callout blocks
+
+.reveal div.callout.callout-style-default {
+  font-size: 80% !important;
+  margin-top: 2em;
+}
+
+.reveal div.callout.callout-style-default .callout-title {
+  font-size: 115%;
 }

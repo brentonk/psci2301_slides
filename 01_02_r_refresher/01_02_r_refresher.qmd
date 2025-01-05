@@ -1,0 +1,541 @@
+---
+title: "Refresher on R essentials"
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method:
+  method: mathjax
+  url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-01-08
+---
+
+
+## Today's agenda
+
+```{r}
+#| echo: false
+#| message: false
+library("tidyverse")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5,
+        tibble.max_extra_cols = 3)
+```
+
+1. Getting data into R
+2. Manipulating and cleaning data with tidyverse
+3. Data visualization with ggplot
+
+## Before we go further: Packages
+
+All R code I write in this course will assume you've got the [tidyverse](https://www.tidyverse.org/) R package installed and loaded.
+
+```{r}
+#| message: false
+library("tidyverse")
+```
+
+If that gives you an error message like...
+
+```
+Error in library("tidyverse") : there is no package called ‘tidyverse’
+```
+
+...then you need to install the package by running
+
+```{r}
+#| eval: false
+install.packages("tidyverse")
+```
+
+
+# Getting data into R
+
+## Data from the public Internet
+
+If you have a direct link to a CSV file, you can plug it into `read_csv()`.
+
+Remember to put the URL inside quote marks.
+
+```{r}
+#| echo: true
+#| output-location: fragment
+df_lottery <- read_csv("https://data.ny.gov/api/views/5xaw-6ayf/rows.csv")
+print(df_lottery)
+```
+
+## Data from a downloaded file
+
+Often you can't `read_csv()` directly from a URL:
+
+- Files behind logins, e.g. on the course Brightspace
+- Files within a zipped directory
+- Files that somebody emailed you
+
+In this situation, you need to be mindful of your [working directory]{.alert}
+
+Use `getwd()` to find out where R is looking for files, `setwd()` to change it
+
+```{r}
+getwd()
+```
+
+## Data from a downloaded file: Practice
+
+:::: {.columns}
+
+::: {.column width="50%"}
+1.  Create a directory somewhere you can find it
+2.  Download the `anes2020.csv` file from Brightspace and put it there
+3.  Set as R's working directory
+    - Windows: `setwd('C:/path/to/directory')`
+    - Mac: `setwd('~/path/to/directory')`
+    - ... or just navigate in RStudio and set it that way
+4.  Check that `df_anes <- read_csv("anes2020.csv")` works
+:::
+
+::: {.column width="5%"}
+:::
+
+::: {.column width="45%"}
+```{r}
+#| echo: false
+options(width = 42)
+```
+```{r}
+df_anes <- read_csv("anes2020.csv")
+
+print(df_anes)
+```
+:::
+
+::::
+
+## `read_csv` versus `read.csv`
+
+I always use tidyverse's `read_csv` (w/ underscore) instead of R's built-in `read.csv` (w/ period)
+
+- Automatically stores data frame as "tibble" $\leadsto$ better output display
+- Does *not* automatically encode text as "factor"
+- Works faster + shows progress bar for large datasets
+
+
+# Manipulating data
+
+## Basics of data manipulation
+
+Use `$` to extract a single column
+
+```{r}
+#| echo: false
+options(width = 93, max.print = 25)
+```
+```{r}
+df_anes$age
+```
+
+Use square brackets `[` `]` to extract individual value(s)
+
+```{r}
+df_anes$age[5]     # age of the 5'th row of the data
+df_anes$age[1:10]  # first 10 ages in the data
+```
+
+## Useful data summaries
+
+```{r}
+mean(df_anes$age, na.rm = TRUE)    # average/mean
+median(df_anes$age, na.rm = TRUE)  # median
+sd(df_anes$age, na.rm = TRUE)      # standard deviation
+table(df_anes$race)                # counts of values -> can also do w/ summarize() or count()
+```
+
+## Reducing data by row or column
+
+```{r}
+filter(df_anes, age >= 75)                # by row
+select(df_anes, female, age, education)   # by column
+```
+
+## Chaining commands with the pipe
+
+```{r}
+df_anes |>
+  filter(age >= 75) |>
+  select(female, age, education)
+```
+
+:::{.callout-tip}
+## Different pipes
+I use R's built-in pipe `|>`.
+Online you'll find a lot of code using the tidyverse pipe `%>%`.
+Both are fine and do essentially the same thing.
+:::
+
+## Changing and adding columns
+
+```{r}
+df_anes |>
+  mutate(female = if_else(female == 1, "yes", "no"),
+         age_in_days = age * 365,
+         employment_type = case_when(
+           hours_worked == 0 ~ "unemployed",
+           hours_worked < 32 ~ "part-time",
+           hours_worked >= 32 ~ "full-time"
+         )) |>
+  relocate(female, age_in_days, employment_type)  # put these cols first
+```
+
+## Summaries by group
+
+```{r}
+df_anes |>
+  group_by(race) |>
+  summarize(n_respondents = n(),
+            avg_trump_feeling = mean(therm_trump, na.rm = TRUE),
+            sd_trump_feeling = sd(therm_trump, na.rm = TRUE))
+```
+
+## Making changes stick
+
+R commands almost never change a data frame in memory.
+The results of `filter()`, `select()`, `mutate()`, etc., will disappear unless you use `<-` to overwrite the original data frame or create a new one.
+
+```{r}
+df_anes_women <- df_anes |>
+  filter(female == 1)
+```
+
+::::{.columns}
+:::{.column width="50%"}
+```{r}
+#| echo: false
+options(width = 46)
+```
+```{r}
+df_anes
+```
+:::
+:::{.column width="50%"}
+```{r}
+df_anes_women
+```
+:::
+::::
+
+## Other helpful data manipulation commands
+
+- `case_match()` to code one column based on values of another
+- `arrange()` for reordering rows
+- `pivot_wider()` and `pivot_longer()` for reshaping data frames
+- `left_join()` for merging data frames
+- `group_by() |> mutate()` to add columns based on group-level calculations
+
+:::{.callout-tip}
+## Additional info on these commands
+- The "Data Wrangling" notes from PSCI 2300 posted to Brightspace
+- Lecture notes from [my graduate stats class](https://bkenkel.com/pdaps/data.html)
+- "Data Transformation" and "Data Tidying" chapters of [*R for Data Science*](https://r4ds.hadley.nz/)
+:::
+
+
+# Data visualization
+
+## Visualizing a single variable
+### Continuous variables: Histogram
+
+```{r}
+#| echo: false
+
+# Set default theme for plots
+theme_set(theme_bw(base_size = 16))
+```
+```{r}
+#| output-location: column
+#| fig-width: 6.5
+#| fig-height: 4.5
+ggplot(df_anes, aes(x = age)) +
+  geom_histogram(color = "black",
+                 fill = "lightblue",
+                 alpha = 0.5,
+                 binwidth = 2) +
+  labs(x = "Age",
+       y = "Number of respondents",
+       title = "Distribution of age in 2020 ANES")
+```
+
+:::{.callout-warning}
+## ggplot syntax
+ggplot commands are separated by addition `+`, not the pipe `|>`.
+:::
+
+## Visualizing a single variable
+### Categorical variables: Bar chart
+
+```{r}
+#| output-location: column
+#| fig-width: 6.5
+#| fig-height: 4.5
+ggplot(df_anes, aes(y = race)) +
+  geom_bar(color = "black",
+           fill = "lightblue",
+           alpha = 0.5) +
+  labs(x = "Number of respondents",
+       y = "",
+       title = "Distribution of race in 2020 ANES")
+```
+
+## Visualizing relationships
+### Two continuous variables: Scatterplot
+
+```{r}
+#| output-location: column
+#| fig-width: 6.5
+#| fig-height: 4.5
+#| code-line-numbers: true
+ggplot(df_anes,
+       aes(x = therm_biden, y = therm_trump)) +
+  geom_point() +
+  labs(x = "Feelings toward Biden",
+       y = "Feelings toward Trump",
+       title = "Shocker: Liking Biden predicts disliking Trump")
+```
+
+## Visualizing relationships {visibility="uncounted"}
+### Two continuous variables: Scatterplot
+
+```{r}
+#| output-location: column
+#| fig-width: 6.5
+#| fig-height: 4.5
+#| code-line-numbers: 3-4
+ggplot(df_anes,
+       aes(x = therm_biden, y = therm_trump)) +
+  geom_point(position = "jitter",
+             alpha = 0.1) +
+  labs(x = "Feelings toward Biden",
+       y = "Feelings toward Trump",
+       title = "Shocker: Liking Biden predicts disliking Trump")
+```
+
+:::{.callout-note}
+## Jitter and transparency
+When data is clumpy with lots of overlapping values, jitter the point locations and/or make points semi-transparent to see relationships better.
+:::
+
+## Visualizing relationships {visibility="uncounted"}
+### Two continuous variables: Scatterplot
+
+```{r}
+#| output-location: column
+#| fig-width: 6.5
+#| fig-height: 4.5
+#| code-line-numbers: 5-5
+ggplot(df_anes,
+       aes(x = therm_biden, y = therm_trump)) +
+  geom_point(position = "jitter",
+             alpha = 0.1) +
+  geom_smooth() +
+  labs(x = "Feelings toward Biden",
+       y = "Feelings toward Trump",
+       title = "Shocker: Liking Biden predicts disliking Trump")
+```
+
+:::{.callout-note}
+## Smoothing lines
+Use `geom_smooth()` for a flexible trend line, or `geom_smooth(method = "lm")` for the linear regression line.
+:::
+
+## Visualizing relationships
+### Continuous and categorical variable: Box plot
+
+```{r}
+#| output-location: column
+#| fig-width: 6.5
+#| fig-height: 4.5
+#| code-line-numbers: true
+ggplot(df_anes, aes(x = hours_worked, y = education)) +
+  geom_boxplot() +
+  labs(x = "Hours worked per week",
+       y = "Highest educational attainment",
+       title = "Who works the longest hours?")
+```
+
+## Visualizing relationships {visibility="uncounted"}
+### Continuous and categorical variable: Box plot
+
+```{r}
+#| output-location: column
+#| fig-width: 6.5
+#| fig-height: 4.5
+#| code-line-numbers: 3-7
+ggplot(df_anes, aes(x = hours_worked, y = education)) +
+  geom_boxplot() +
+  scale_y_discrete(limits = c("Less than high school",
+                              "High school",
+                              "Some college",
+                              "Bachelor's degree",
+                              "Graduate degree")) +
+  labs(x = "Hours worked per week",
+       y = "Highest educational attainment",
+       title = "Who works the longest hours?")
+```
+
+:::{.callout-note}
+## Reordering a categorical variable
+Use `scale_x_discrete(limits = c(...))` or `scale_y_discrete(limits = c(...))` to change the order the categories appear in.
+:::
+
+## Visualizing relationships
+### Continuous and categorical variable: Faceted histogram
+
+<style>
+.shorter_code {
+  height: 12.5em;
+}
+</style>
+
+```{r}
+#| output-location: column
+#| fig-width: 6.5
+#| fig-height: 5.5
+#| code-line-numbers: true
+#| class-source: shorter_code
+#| classes: shorter_code
+ggplot(df_anes, aes(x = hours_worked)) +
+  geom_histogram(binwidth = 5) +
+  facet_wrap(~ education,
+             scales = "free",
+             ncol = 2) +
+  labs(x = "Hours worked per week",
+       y = "Number of respondents",
+       title = "Distribution of working hours by education level")
+```
+
+## Visualizing relationships {visibility="uncounted"}
+### Continuous and categorical variable: Faceted histogram
+
+```{r}
+#| output-location: column
+#| fig-width: 6.5
+#| fig-height: 5.5
+#| code-line-numbers: 3-7
+#| class-source: shorter_code
+#| classes: shorter_code
+ggplot(df_anes, aes(x = hours_worked)) +
+  geom_histogram(binwidth = 5) +
+  facet_wrap(~ fct_relevel(education,
+                           "Less than high school",
+                           "High school",
+                           "Some college",
+                           "Bachelor's degree"),
+             scales = "free",
+             ncol = 2) +
+  labs(x = "Hours worked per week",
+       y = "Number of respondents",
+       title = "Distribution of working hours by education level")
+```
+
+:::{.callout-note}
+## Reordering facets
+A bit fussier than reordering categories on an axis---use `fct_relevel()` within the call to `facet_wrap()`.
+:::
+
+## Visualizing relationships {visiblity="uncounted"}
+### Continuous and categorical variable: Bar chart summary
+
+```{r}
+#| output-location: column
+#| fig-width: 6.5
+#| fig-height: 4.5
+#| code-line-numbers: true
+df_anes |>
+  group_by(education) |>
+  summarize(avg_hours = mean(hours_worked,
+                             na.rm = TRUE))
+```
+
+## Visualizing relationships {visiblity="uncounted"}
+### Continuous and categorical variable: Bar chart summary
+
+```{r}
+#| output-location: column
+#| fig-width: 6.5
+#| fig-height: 4.5
+#| code-line-numbers: 5-14
+df_anes |>
+  group_by(education) |>
+  summarize(avg_hours = mean(hours_worked,
+                             na.rm = TRUE)) |>
+  ggplot(aes(x = avg_hours, y = education)) +
+  geom_bar(stat = "identity") +
+  scale_y_discrete(limits = c("Less than high school",
+                              "High school",
+                              "Some college",
+                              "Bachelor's degree",
+                              "Graduate degree")) +
+  labs(title = "Working hours by education level",
+       x = "Average hours per week",
+       y = "Highest educational attainment")
+```
+
+## Visualizing relationships
+### Two categorical variables: Faceted bar chart
+
+```{r}
+#| output-location: column
+#| fig-width: 7
+#| fig-height: 5.5
+ggplot(df_anes, aes(y = vote_type)) +
+  geom_bar() +
+  facet_wrap(~ race, scales = "free_x") +
+  labs(x = "Number of respondents",
+       y = "",
+       title = "Vote choice by race in 2020 ANES")
+```
+
+## Visualizing relationships
+### Two categorical variables: Dodged bar chart
+
+```{r}
+#| output-location: column
+#| fig-width: 7
+#| fig-height: 5.5
+ggplot(df_anes, aes(y = race)) +
+  geom_bar(aes(fill = vote_type),
+           position = "dodge") +
+  labs(x = "Number of respondents",
+       y = "",
+       fill = "2020 vote",
+       title = "Vote choice by racial identity")
+```
+
+# Wrapping up
+
+## What we did today
+
+1.  Got data into R
+    - File directly on web $\leadsto$ `read_csv("https://url.com/file.csv")`
+    - Otherwise $\leadsto$ set working directory, save file there, `read_csv("file.csv")`
+2.  Manipulated data
+    - Subset by row with `filter()`, by column with `select()`
+    - Add or change columns with `mutate()`
+    - Calculate summaries with `group_by()` and `summarize()`
+    - Chain commands with the pipe `|>`
+3.  Visualized data with ggplot
+    - Histograms and bar charts for one-variable summaries
+    - Scatterplots, box plots, faceting for relationships
+
+## To do for next time
+
+Next week's topic: [Causal questions and research design]{.alert}
+
+1.  If anything from today was unfamiliar, practice with it
+2.  Read "Correlation, Causation, and Confusion" article
+3.  Read "Introduction to Causality" ebook chapter
+4.  Start thinking about topics you want to study in final project
