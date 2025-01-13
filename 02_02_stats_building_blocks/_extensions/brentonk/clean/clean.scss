@@ -355,7 +355,6 @@ $selection-bg: #26351c !default;
 }
 
 // Callout blocks
-
 .reveal div.callout.callout-style-default {
   font-size: 80% !important;
   margin-top: 2em;
@@ -363,4 +362,21 @@ $selection-bg: #26351c !default;
 
 .reveal div.callout.callout-style-default .callout-title {
   font-size: 115%;
+}
+
+// Custom block styles
+div.example {
+  font-size: 90%;
+  padding-left: 3ex;
+  padding-right: 3ex;
+  margin-top: -0.75em;
+  color: $accent;
+}
+div.example > p:before {
+  content: $right-arrow;
+  color: $accent;
+  display: inline-block;
+  width: 1em;
+  margin-left: -1em;
+  margin-right: 0.5em;
 }

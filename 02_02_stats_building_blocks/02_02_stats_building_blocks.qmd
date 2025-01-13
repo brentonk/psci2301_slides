@@ -1,0 +1,660 @@
+---
+title: The building blocks of statistics
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method:
+  method: mathjax
+  url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-01-15
+---
+
+
+## Recap
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("02_02_stats_building_blocks/02_02_stats_building_blocks.qmd")
+library("here")
+library("tidyverse")
+library("patchwork")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+```{r load-data}
+#| echo: false
+#| message: false
+#| cache: true
+df_anes <- read_csv(here("data", "anes2020.csv")) |>
+  filter(!is.na(therm_trump), !is.na(therm_biden), !is.na(watch_tucker))
+```
+
+This week + next: [Conceptual foundations of statistical analysis of causality]{.alert}
+
+Last time we discussed:
+
+1.  Causal statements as counterfactual statements
+2.  Ingredients of a causal analysis
+    -   Unit of analysis and population of interest
+    -   Outcome variable to explain
+    -   Treatment variable we suspect affects outcome (versus some comparison group)
+
+## Today's agenda
+
+Correlation does not imply causation
+
+. . .
+
+... but all our statistical evidence about causation is built on correlations
+
+. . .
+
+So we need to understand the basics of statistical correlations
+
+1.  Population mean (expectation) and sample mean
+2.  Variance and standard deviation
+3.  Covariance and correlation
+4.  Conditional means and differences in means
+
+::: {.callout-warning}
+## This is gonna require some math
+So be sure to ask questions if you're confused about anything!
+I'm here to help!
+:::
+
+## Motivating example
+
+Mostly we'll be talking about abstract stats today
+
+Question to keep in mind if you get lost in the abstraction
+
+*What's the relationship between watching Tucker Carlson's show and opinions of Donald Trump among registered voters in 2020?*
+
+::: {.callout-warning}
+## This is not a causal question
+We're not (yet) asking what is the [effect]{.underline} of watching Tucker on one's opinion toward Trump.
+We'll get there soon!
+:::
+
+
+# One-variable statistics
+
+## Population versus sample
+
+We are interested in a **population**^[Assume the population is finite but large.  Ideas are the same for infinite populations, but we'd need calculus.] of units, $i = 1, \ldots, \mathcal{N}$ ("fancy N")
+
+::: {.example .fragment}
+e.g., all U.S. registered voters in 2020
+:::
+
+. . .
+
+We only have a **sample** from the population, $i = 1, \ldots, N$
+
+::: {.example .fragment}
+e.g., the `r nrow(df_anes)` voters interviewed for the 2020 ANES
+:::
+
+. . .
+
+For now, no assumptions on how the sample was drawn
+
+Random sampling is important for **inference** --- drawing conclusions about the population from a sample
+
+## Expected value
+
+A **variable** $Y_i$ is a numerical attribute of population unit $i$
+
+::: {.example .fragment}
+e.g., registered voter $i$'s opinion of Trump on a 0–100 scale
+:::
+
+The **expected value** of a variable, $\mathbb{E}[Y_i]$, is its average in the population
+
+::: {.example .fragment}
+e.g., average opinion of Trump among all registered voters in 2020
+:::
+
+::: {.callout-tip .fragment}
+## Expected value for binary variables
+We often code "yes"/"no" variables like "Whether the respondent watches Tucker Carlson" using 1 = yes, 0 = no.
+
+For these **binary variables**, the expected value is the **proportion** (between 0 and 1) of the population with a "yes".
+
+e.g., if $\mathbb{E}[Y_i] = 0.043$, that means we have "yes" for 4.3% of the population and "no" for the remaining 95.7%.
+:::
+
+## The mathematics of expected value
+
+The mathematical formula: $$
+\mathbb{E}[Y_i]
+= \frac{1}{\mathcal{N}} \left[Y_1 + Y_2 + \cdots + Y_{\mathcal{N}}\right]
+= \frac{1}{\mathcal{N}} \sum_{i=1}^{\mathcal{N}} Y_i
+$$
+
+::: {.callout-tip .fragment}
+## Linearity of expectation
+Important property: If $X_i$ and $Y_i$ are variables, and $a$ and $b$ are constants, $$\mathbb{E}[a X_i + b Y_i] = a \mathbb{E}[X_i] + b \mathbb{E}[Y_i].$$
+:::
+
+## Sample mean
+
+Without data on the full population, we don't know the expected value
+
+But we can always calculate the **sample mean** of the data we have
+
+. . .
+
+We'll use $\avg[Y_i]$, aka $\bar{Y}$, to denote the sample mean of $Y_i$
+$$\avg[Y_i] = \bar{Y} = \frac{1}{N} \left[Y_1 + Y_2 + \cdots + Y_n\right] = \frac{1}{N} \sum_{i=1}^N Y_i.$$
+
+Same as $\E[Y_i]$, but summing over observed data instead of full population
+
+::: {.callout-tip .fragment}
+## Linearity of sample mean
+Just like with the expected value, $\avg[a X_i + b Y_i] = a \avg[X_i] + b \avg[Y_i]$.
+:::
+
+```{r setup-stability}
+#| echo: false
+set.seed(202)
+df_anes_samp <- df_anes |>
+  filter(!is.na(therm_trump)) |>
+  slice_sample(prop = 1)
+df_anes_samp[1:5, ] <-
+  df_anes_samp[1:5, ] |>
+  slice_min(therm_trump, n = 5)
+df_anes_samp <- df_anes_samp |>
+  mutate(sample_size = row_number(),
+         running_sum = cumsum(therm_trump),
+         running_mean = running_sum / sample_size,
+         .before = 1)
+f_stability <- function(size) {
+  p_hist <- df_anes_samp |>
+    filter(sample_size <= !! size) |>
+    ggplot(aes(x = therm_trump)) +
+    geom_histogram(binwidth = 5) +
+    scale_x_continuous(limits = c(-5, 105)) +
+    labs(x = "Feeling toward Trump, 0-100 scale",
+         y = "Respondents")
+  p_mean <- df_anes_samp |>
+    filter(sample_size <= !! size) |>
+    ggplot(aes(x = sample_size, y = running_mean)) +
+    geom_hline(yintercept = tail(df_anes_samp$running_mean, 1),
+               linetype = "dashed",
+               color = "lightblue") +
+    geom_line() +
+    scale_x_continuous(limits = c(1, size)) +
+    scale_y_continuous(limits = c(0, 100)) +
+    labs(x = "Number of respondents counted",
+         y = "Running mean")
+  (p_hist / p_mean) +
+    plot_annotation(title = str_c("After N = ", size, " respondents counted"))
+}
+```
+
+## Stability of the sample mean
+```{r}
+#| echo: false
+#| cache: true
+f_stability(5)
+```
+
+## Stability of the sample mean {visibility="uncounted"}
+```{r}
+#| echo: false
+#| cache: true
+f_stability(10)
+```
+
+## Stability of the sample mean {visibility="uncounted"}
+```{r}
+#| echo: false
+#| cache: true
+f_stability(20)
+```
+
+## Stability of the sample mean {visibility="uncounted"}
+```{r}
+#| echo: false
+#| cache: true
+f_stability(40)
+```
+
+## Stability of the sample mean {visibility="uncounted"}
+```{r}
+#| echo: false
+#| cache: true
+f_stability(80)
+```
+
+## Stability of the sample mean {visibility="uncounted"}
+```{r}
+#| echo: false
+#| cache: true
+f_stability(160)
+```
+
+## Stability of the sample mean {visibility="uncounted"}
+```{r}
+#| echo: false
+#| cache: true
+f_stability(320)
+```
+
+## Stability of the sample mean {visibility="uncounted"}
+```{r}
+#| echo: false
+#| cache: true
+f_stability(640)
+```
+
+## Stability of the sample mean {visibility="uncounted"}
+```{r}
+#| echo: false
+#| cache: true
+f_stability(1280)
+```
+
+## Stability of the sample mean {visibility="uncounted"}
+```{r}
+#| echo: false
+#| cache: true
+f_stability(2560)
+```
+
+## Stability of the sample mean {visibility="uncounted"}
+```{r}
+#| echo: false
+#| cache: true
+f_stability(5120)
+```
+
+## Stability of the sample mean {visibility="uncounted"}
+```{r}
+#| echo: false
+#| cache: true
+f_stability(nrow(df_anes_samp))
+```
+
+## Population variance
+
+**Variance** is the typical (squared) distance b/w an observation and the mean
+
+Mathematical formula: $$\V[Y_i] = \E\left[ \left(Y_i - \E[Y_i]\right)^2 \right]$$
+
+. . .
+
+::: {.incremental}
+How to think about this:
+
+1.  Calculate each observation's distance from mean: $Y_i - \E[Y_i]$
+2.  Square the distances: $(Y_i - \E[Y_i])^2$
+    -   Now they're all positive
+    -   Bigger differences matter more-er
+3.  Take the average of the squared distances: $\E[(Y_i - \E[Y_i])^2]$
+:::
+
+## Sample variance
+
+We go from population variance to **sample variance** in much the same way we go from expected value to sample mean: $$\var[Y_i] = \avg\left[ \left(Y_i - \bar{Y}\right)^2 \right]$$
+
+::: {.callout-note .fragment}
+## The average in the sample variance
+Most of the time, including by default in R, sample variance is calculated with a slight modification to the standard averaging formula: $$\var[Y_i] = \frac{N}{N - 1} \avg\left[ \left(Y_i - \bar{Y}\right)^2 \right] = \frac{1}{N - 1} \sum_{i=1}^N (Y_i - \bar{Y})^2.$$
+This is for a *bias correction*, a technical issue we won't get into.
+You should usually work with large enough samples that it doesn't matter if you divide by $N$ or by $N - 1$.
+:::
+
+## Standard deviation
+
+Variance can be hard to interpret because it's in *squared* units
+
+We often work with the **standard deviation**, the square root of the variance: $$\sd[Y_i] = \sqrt{\var[Y_i]} = \sqrt{\avg[(Y_i - \bar{Y})^2]}.$$
+
+```{r}
+var(df_anes$therm_trump)
+sd(df_anes$therm_trump)
+```
+
+## Interpreting standard deviation
+
+Standard deviation is a "typical" distance from the mean
+
+Normally distributed data $\leadsto$ ~68% within 1sd, ~95% within 2sd
+
+```{r normal-dist}
+#| echo: false
+#| cache: true
+set.seed(404)
+tibble(x = rnorm(10000, mean = 0, sd = 1)) |>
+  mutate(category = case_when(
+           abs(x) <= 1 ~ 1,
+           abs(x) <= 2 ~ 2,
+           TRUE ~ 3
+         ),
+         category = factor(category,
+                           levels = 1:3,
+                           labels = c("Within 1sd", "Within 2sd", "Not within 2sd"))
+         ) |>
+  ggplot(aes(x = x)) +
+  geom_histogram(aes(fill = category),
+                 color = "black",
+                 breaks = seq(-3.5, 3, by = 0.25)) +
+  scale_fill_manual(values = c("gray25", "gray75", "white"))
+```
+
+## Variance and standard deviation of a binary variable
+
+Think again about a binary variable $Y_i$
+
+::: {.example}
+e.g., $Y_i = 1$ for those who watch Tucker Carlson, $Y_i = 0$ for those who don't
+:::
+
+Sample mean $\bar{Y}$ is proportion of obs where $Y_i = 1$
+
+Simple formulas for the sample variance and standard deviation in this case:
+\begin{align*}
+\var[Y_i] &= \bar{Y} (1 - \bar{Y}) \\
+\sd[Y_i] &= \sqrt{\bar{Y} (1 - \bar{Y})}
+\end{align*}
+
+## Variance and standard deviation of a binary variable
+
+:::: {.columns}
+::: {.column .incremental width="50%"}
+- $\bar{Y} = 0$
+  - every $Y_i = 0$
+  - no variance
+- $\bar{Y} = 1$
+  - every $Y_i = 1$
+  - no variance
+- $\bar{Y} = 0.5$
+  - max uncertainty about each individual observation
+  - highest possible variance for binary variable
+:::
+
+::: {.column width="50%"}
+```{r var-binary}
+#| echo: false
+#| cache: true
+#| fig-width: 5
+#| fig-height: 6
+tibble(prop = seq(0, 1, length.out = 251)) |>
+  mutate(var = prop * (1 - prop),
+         sd = sqrt(var)) |>
+  pivot_longer(-prop) |>
+  mutate(name = factor(name,
+                       levels = c("var", "sd"),
+                       labels = c("Variance", "Standard deviation"))) |>
+  ggplot(aes(x = prop, y = value)) +
+  geom_line() +
+  labs(x = "Proportion of observations where Y_i = 1",
+       y = "Value of statistic") +
+  facet_wrap(~ name, ncol = 1)
+```
+:::
+::::
+
+# Covariance and correlation
+
+## Covariance
+
+Now suppose we have two variables, $X_i$ and $Y_i$
+
+::: {.example .fragment}
+e.g., $X_i$ = does this person watch Tucker?, $Y_i$ = opinion of Trump, 0--100
+:::
+
+. . .
+
+**Covariance**: how much above-average $X_i$ predicts above-average $Y_i$
+$$
+\C[X_i, Y_i]
+= \E\left[(X_i - \E[X_i]) (Y_i - \E[Y_i])\right]
+$$
+
+. . .
+
+Loose guide to interpreting covariance:
+
+| Covariance sign    | Interpretation                           |
+|--------------------|------------------------------------------|
+| $\C[X_i, Y_i] > 0$ | above-average $X_i$ predicts above-average $Y_i$ |
+| $\C[X_i, Y_i] = 0$ | no average relationship b/w $X_i$ and $Y_i$  |
+| $\C[X_i, Y_i] < 0$ | above-average $X_i$ predicts below-average $Y_i$ |
+
+: {tbl-colwidths="[20,60]"}
+
+## The trouble with covariance
+
+Remember with the variance $\V[Y_i]$:
+
+- Hard to interpret directly because in squared units
+- We took the square root to ease interpretation
+
+. . .
+
+Interpreting covariance on its own is [even harder]{.underline}
+
+Measured in (units of $X_i$) $\times$ (units of $Y_i$)
+
+. . .
+
+```{r}
+cov(df_anes$watch_tucker, df_anes$therm_trump, use = "complete")
+```
+
+What does this number mean, besides being positive?
+I've taught PhD-level stats for a decade and can't honestly say
+
+## From covariance to correlation
+
+More common measure of relationship strength is the **correlation coefficient** $$\frac{\C[X_i, Y_i]}{\sqrt{\V[X_i] \times \V[Y_i]}}$$
+
+::: {.incremental}
+Only takes values from -1 to 1
+
+- Sign --- direction of relationship
+  - Positive: Above-average $X_i$ predicts above-average $Y_i$
+  - Negative: Above-average $X_i$ predicts below-average $Y_i$
+- Magnitude --- strength of relationship
+  - Close to 0: $X_i$ not very predictive of $Y_i$ (and vice versa)
+  - Close to -1 or 1: $X_i$ highly predictive of $Y_i$ (and vice versa)
+:::
+
+## The correlation coefficient
+
+```{r}
+#| echo: false
+#| fig-width: 10
+#| fig-height: 7
+#| cache: true
+set.seed(4023)
+n_fake <- 1000
+cor_list <- c(-1, -0.9, -0.5, -0.2, 0, 0.2, 0.5, 0.9, 1)
+fake_x <- rnorm(n_fake)
+fake_z <- rnorm(n_fake)
+tibble(fake_x = rep(fake_x, length(cor_list)),
+       fake_z = rep(fake_z, length(cor_list)),
+       correlation = rep(cor_list, each = n_fake)) |>
+  mutate(fake_y = correlation * fake_x + sqrt(1 - correlation^2) * fake_z,
+         fake_y = 1 + 0.5 * fake_y,
+         correlation = factor(correlation,
+                              levels = cor_list,
+                              labels = str_c("correlation = ", cor_list))) |>
+  ggplot(aes(x = fake_x, y = fake_y)) +
+  geom_point(alpha = 0.25) +
+  facet_wrap(~ correlation)
+```
+
+## Sample covariance and correlation
+
+Shouldn't surprise you at this point, but just for completeness...
+
+Sample covariance: $$\cov[X_i, Y_i] = \avg[(X_i - \bar{X}) (Y_i - \bar{Y})]$$
+
+Sample correlation coefficient: $$\cor[X_i, Y_i] = \avg\left[\frac{X_i - \bar{X}}{\sd[X_i]} \times \frac{Y_i - \bar{Y}}{\sd[Y_i]}\right] = \frac{\cov[X_i, Y_i]}{\sd[X_i] \sd[Y_i]}$$
+
+
+# Difference of means and regression
+
+## The difference of means
+
+How much more or less do Tucker watchers like Trump, compared to non-Tucker-watchers?
+
+::: {.callout-warning}
+## Still not causal!
+We are [not]{.underline} (yet) asking if watching Tucker [causes]{.underline} changes in opinion toward Trump.
+:::
+
+. . .
+
+This is a question about **conditional means**
+
+- $\E[Y_i \mid X_i = 1]$: average Trump opinion among watchers
+- $\E[Y_i \mid X_i = 0]$: average Trump opinion among non-watchers
+- $\E[Y_i \mid X_i = 1] - \E[Y_i \mid X_i = 0]$: difference of means
+
+## Sample difference of means
+
+Average opinion among watchers in our sample: $\avg[Y_i \mid X_i = 1]$
+
+```{r}
+mean(df_anes$therm_trump[df_anes$watch_tucker == 1])
+```
+
+. . .
+
+Average opinion among non-watchers in our sample: $\avg[Y_i \mid X_i = 0]$
+
+```{r}
+mean(df_anes$therm_trump[df_anes$watch_tucker == 0])
+```
+
+. . .
+
+Sample difference of means: $\avg[Y_i \mid X_i = 1] - \avg[Y_i \mid X_i = 0]$
+
+```{r}
+mean(df_anes$therm_trump[df_anes$watch_tucker == 1]) -
+  mean(df_anes$therm_trump[df_anes$watch_tucker == 0])
+```
+
+## An amazing fact about the difference of means {#amazing}
+### aka: Why I taught you about covariance even though it's hard to interpret
+
+If $X_i$ is a binary (0/1) variable: $$\avg[Y_i \mid X_i = 1] - \avg[Y_i \mid X_i = 0] = \frac{\cov[X_i, Y_i]}{\var[X_i]}$$
+
+[[Mathematical proof]{.button}](#proving)
+
+Example with our ANES data:
+
+```{r}
+trump_tucker_cov <- cov(df_anes$therm_trump, df_anes$watch_tucker)
+tucker_var <- var(df_anes$watch_tucker)
+trump_tucker_cov / tucker_var
+```
+
+## A related amazing fact about bivariate regression
+
+You hopefully remember the bivariate regression formula $$\mathbb{E}[Y_i \mid X_i = x] = \alpha + \beta x$$
+where $\alpha$ is the **intercept** and $\beta$ is the **slope**
+
+Using ordinary least squares, our estimated slope is $$\hat{\beta} = \frac{\cov[X_i, Y_i]}{\var[X_i]}$$
+
+Same as difference of means formula for the special case when $X_i$ is binary
+
+## A related amazing fact about bivariate regression {visibility="uncounted"}
+
+```{r}
+lm(therm_trump ~ therm_biden, data = df_anes)
+trump_biden_cov <- cov(df_anes$therm_trump, df_anes$therm_biden)
+biden_var <- var(df_anes$therm_biden)
+trump_biden_cov / biden_var
+```
+
+
+# Wrapping up
+
+## What we did today
+
+Our most important statistical calculations are built on a few key statistics:
+
+- The **mean**, $\bar{Y} = \avg[Y_i] = \frac{1}{N} \sum_{i=1}^N Y_i$
+- The **variance**, $\var[Y_i] = \frac{1}{N} \sum_{i=1}^N (Y_i - \bar{Y})^2$
+- The **covariance**, $\cov[X_i, Y_i] = \frac{1}{N} \sum_{i=1}^N (X_i - \bar{X}) (Y_i - \bar{Y})$
+
+The correlation, difference of means, and bivariate regression slope can all be computed from these underlying statistics
+
+## To do for next time
+
+We'll cover the [potential outcomes framework]{.alert}, creating a statistical model of cause-effect relationships
+
+1. Read pages 1--11 of *Mastering 'Metrics*.
+2. Read "Statistics and Causal Inference".  Most importantly:
+   - Model for associational inference and "Rubin's model" (§1--3)
+   - The fundamental problem of causal inference (§3)
+   - What can be a cause? (§7)
+3. [Problem Set 1]{.alert} to be posted by today, due next Fri 1/24
+
+
+# Appendix {visibility="uncounted"}
+
+## Proving the difference of means formula (1/2) {#proving visibility="uncounted" .smaller}
+
+First we'll prove a useful property of covariance, namely that $\cov[X_i, Y_i] = \avg[X_i Y_i] - \bar{X} \bar{Y}$.
+(This is true even when $X_i$ is not binary.)
+
+\begin{align}
+\cov[X_i, Y_i]
+&= \avg[(X_i - \bar{X}) (Y_i - \bar{Y})] \\
+&= \frac{1}{N} \sum_{i=1}^N [(X_i - \bar{X}) (Y_i - \bar{Y})] \\
+&= \frac{1}{N} \left[\sum_{i=1}^N X_i Y_i - \bar{X} \sum_{i=1}^N Y_i - \bar{Y} \sum_{i=1}^N X_i + N \bar{X} \bar{Y}\right] \\
+&= \frac{1}{N} \left[\sum_{i=1}^N X_i Y_i - N \bar{X} \underbrace{\left(\frac{1}{N} \sum_{i=1}^N Y_i\right)}_{=\bar{Y}} - N \bar{Y} \underbrace{\left(\frac{1}{N} \sum_{i=1}^N X_i\right)}_{= \bar{X}} + N \bar{X} \bar{Y}\right] \\
+&= \frac{1}{N} \left[\sum_{i=1}^N X_i Y_i - N \bar{X} \bar{Y}\right] \\
+&= \avg[X_i Y_i - \bar{X} \bar{Y}].
+\end{align}
+
+[[Back to main slides]{.button}](#amazing)
+
+## Proving the difference of means formula (2/2) {visibility="uncounted" .smaller}
+
+Now consider the case where $X_i$ is binary.
+Assume the observations are ordered so that $X_i = 1$ for $i = 1, \ldots, N_1$ and that $X_i = 0$ for $i = N_1 + 1, \ldots, N$.
+Define $N_0$ as the number of observations for which $X_i = 0$, i.e., $N_0 = N - N_1$.
+
+By definition, the sample mean of $X_i$ is $\bar{X} = \frac{N_1}{N}$.
+Additionally, we have $\avg[Y_i \mid X_i = 1] = \frac{1}{N_1} \sum_{i=1}^{N_1} Y_i$ and $\avg[Y_i \mid X_i = 0] = \frac{1}{N_0} \sum_{i=N_1+1}^N Y_i$.
+
+\begin{align}
+\frac{\cov[X_i, Y_i]}{\var[X_i]}
+= \frac{\avg[X_i Y_i - \bar{X} \bar{Y}]}{\bar{X} (1 - \bar{X})}
+&= \frac{\frac{1}{N} \sum_{i=1}^N X_i Y_i - \left(\frac{N_1}{N}\right) \left(\frac{1}{N} \sum_{i=1}^N Y_i\right)}{\frac{N_1}{N} \times \frac{N_0}{N}} \\
+&= \frac{N [\sum_{i=1}^{N_1} (1) Y_i + \sum_{i=N_1+1}^N (0) Y_i] - N_1 \sum_{i=1}^N Y_i}{N_1 \times N_0} \\
+&= \frac{\cancel{(N - N_1)}}{N_1 \times \cancel{N_0}} \sum_{i=1}^{N_1} Y_i - \frac{\cancel{N_1}}{\cancel{N_1} \times N_0} \sum_{i=N_1+1}^N Y_i \\
+&= \avg[Y_i \mid X_i = 1] - \avg[Y_i \mid X_i = 0].
+\end{align}
+
+[[Back to main slides]{.button}](#amazing)

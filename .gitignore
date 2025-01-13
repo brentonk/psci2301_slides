@@ -4,3 +4,6 @@
 # Quarto generated files
 *.html
 */*_files/
+
+# Other junk files
+*.Rhistory
