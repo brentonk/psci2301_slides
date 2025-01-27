@@ -1,0 +1,489 @@
+---
+title: Randomized experiments
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method:
+  method: mathjax
+  url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-01-27
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("04_01_randomization/04_01_randomization.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+
+## Recap
+
+Last week --- [the potential outcomes model]{.alert}
+
+1. Causal effects as differences in potential outcomes, $\tau_i = Y_{1i} - Y_{0i}$
+2. Observed difference in means $\neq$ avg treatment effect (usually)
+   - Treatment group not representative of full population
+   - ... except under the [independence condition:]{.alert} No covariance between potential outcomes and treatment assignment
+3. How can we meet the independence condition?
+   (a) Experimentally manipulate treatment assignment
+   (b) Condition on confounding variables
+   (c) Look for natural experiments with "as-if random" assignment
+
+## Today's agenda
+
+[Randomized experiments:]{.alert} Most reliable path to causal inference
+
+... but also the most difficult to pull off in practice  
+ 
+
+1. Motivating question: How does social pressure affect voting?
+2. Basic experimental design
+3. Why randomization ensures the independence condition holds
+
+
+# Motivating question: Social pressure and voting
+
+## Voting: the cost-benefit calculus
+
+Voting is costly
+
+- Registration
+- Remembering when the election is held
+- Learning about the candidates
+- Standing in line on Election Day, or figuring out how to vote early
+
+. . .
+
+...and yet the direct political benefits are [infinitesimal]{.alert}
+
+Chances are, your vote will never decide an election
+
+## The probability of being pivotal
+
+Imagine there are only 500 other voters
+
+Close election: Each other voter 50% to vote R, 50% to vote D
+
+What's the probability your vote will decide the election?
+
+. . .
+
+```{r pivotal_500}
+dbinom(250, 500, 0.5)
+```
+
+::: {.callout-tip}
+## Binomial distribution in R
+`dbinom(x, n, p)` = probability of exactly `x` successes in `n` independent trials, each with probability `p` of success.
+:::
+
+## The probability of being pivotal
+
+```{r pivotal_graph}
+#| cache: true
+#| echo: false
+
+pr_pivotal <- function(voters) {
+  half_voters <- round(voters / 2)
+  dbinom(half_voters, 2 * half_voters, 0.5)
+}
+df_pivotal <- tibble(voters = 10^seq(3.4, 9, length.out = 101),
+                     pivotal = pr_pivotal(voters))
+lbl_pct <- function(pct) {
+
+}
+pal <- brewer.pal(5, "Set1")
+df_pivotal |>
+  ggplot(aes(x = voters, y = pivotal)) +
+  geom_line() +
+  geom_vline(xintercept = 3300, linetype = "dashed", color = pal[1]) +
+  annotate("text", x = 3300, y = pr_pivotal(3300),
+           label = str_c("City council (" , scales::percent(pr_pivotal(3300), 0.1), ")"),
+           color = pal[1], hjust = -0.075, vjust = 0) +
+  geom_vline(xintercept = 114000, linetype = "dashed", color = pal[5]) +
+  annotate("text", x = 114000, y = pr_pivotal(114000),
+           label = str_c("Mayor (" , scales::percent(pr_pivotal(114000), 0.1), ")"),
+           color = pal[5], hjust = -0.075, vjust = 0) +
+  geom_vline(xintercept = 323000, linetype = "dashed", color = pal[2]) +
+  annotate("text", x = 323000, y = pr_pivotal(323000),
+           label = str_c("US Rep (" , scales::percent(pr_pivotal(323000), 0.1), ")"),
+           color = pal[2], hjust = -0.075, vjust = 0) +
+  geom_vline(xintercept = 3000000, linetype = "dashed", color = pal[3]) +
+    annotate("text", x = 3000000, y = pr_pivotal(3000000),
+             label = str_c("Senate (" , scales::percent(pr_pivotal(3000000), 0.01), ")"),
+             color = pal[3], hjust = -0.075, vjust = -0.2) +
+  geom_vline(xintercept = 136000000, linetype = "dashed", color = pal[4]) +
+    annotate("text", x = 136000000, y = pr_pivotal(136000000),
+             label = str_c("President (" , scales::percent(pr_pivotal(136000000), 0.001), ")"),
+             color = pal[4], hjust = -0.075, vjust = -0.4) +
+  scale_x_log10("Number of voters",
+                breaks = 10^(3:9),
+                labels = scales::comma) +
+  scale_y_continuous("Maximum chance of being pivotal",
+                     labels = scales::percent)
+```
+
+## The "duty" logic of voting
+
+If your vote is very unlikely to swing the race, why is turnout so high?
+
+Two explanations:
+
+1. People are idiots who don't realize they won't swing the election
+2. Something other than pivotality probability motivates voting
+
+. . .
+
+Political scientists generally think it's #2 --- [civic duty]{.alert}
+
+But this bundles multiple things together
+
+- Intrinsic motivation: I vote because I personally find it important
+- Extrinsic motivation: I vote because of social norms/pressure to do so
+
+## Correlational evidence for extrinsic motivation
+
+:::: {.columns}
+::: {.column width="50%"}
+![](knack1992table4.png)
+:::
+::: {.column width="50%"}
+Knack 1992, "Civic Norms, Social Sanctions, and Voter Turnout"
+
+::: {.example}
+"Do you have any friends, neighbors, or relatives who would be disappointed or angry with you if they knew you had not voted in this year's elections?"
+
+Positive, statistically significant predictor of voting
+:::
+
+Other studies: People whose close social ties vote are themselves more likely to vote
+:::
+::::
+
+## From correlation to causation
+
+[Treatment $D_i$:]{.alert} Feel pressure to vote from close peers
+
+[Outcome $Y_i$:]{.alert} Turning out to vote
+
+::: {style="font-size: 90%"}
+- $Y_{1i}$: vote if feel pressure?
+- $Y_{0i}$: vote if feel no pressure? 
+:::
+
+<hr>
+
+**Exercise:**
+
+1. Identify a [confounding variable]{.alert} in this relationship
+
+2. Explain in words why it's a confounding variable
+
+3. Explain precisely why we'd expect the independence condition to fail
+
+
+# Basic experimental design
+
+## Motivation for experimentation
+
+We want to know --- How does social pressure affect turnout?
+
+. . . 
+
+The inferential problem --- Lots of confounders
+
+- People who feel more social pressure may be unlike others
+- Observed correlation unlikely to represent true causal effect
+
+. . .
+
+Gerber, Green, Larimer solution: [Randomize]{.alert} exposure to social pressure
+
+## The experimental ideals
+
+*Ex ante*, every unit in sample has same probability of getting treated
+
+- [Don't]{.underline} be thoughtful and tailor who gets what treatment
+- Doesn't need to be 50% chance for everyone, just same for everyone
+- Administer treatment appropriately if spillovers are likely
+  - e.g., GGL mailers go to households instead of individuals
+
+$\leadsto$ No [systematic]{.underline} differences between treatment and comparison groups
+
+## Modes of experiment
+
+:::: {.columns}
+::: {.column width="50%"}
+**Lab experiment:** Recruit subjects, observe outcomes in lab
+
+- Easier to monitor compliance
+- Easier to prevent spillovers
+- More detailed outcome measures
+- Lower sample sizes (usually)
+- More external validity concerns
+- Fewer ethical concerns (usually)
+:::
+::: {.column width="50%"}
+**Field experiment:** Randomize treatment "in the wild"
+
+- Harder to monitor compliance
+- Harder to prevent spillovers
+- Coarser outcome measures
+- Higher sample sizes (usually)
+- Better "real world" takeaways
+- ...but also more ethical peril
+:::
+::::
+
+
+# How randomization ensures independence
+
+## Randomization and the independence condition
+
+::: {.callout-note}
+## Independence: The mathematical condition
+No correlation between potential outcomes and treatment assignment:
+\begin{align}
+\C[Y_{1i}, D_i] &= 0 \\
+\C[Y_{0i}, D_i] &= 0
+\end{align}
+:::
+
+. . .
+
+Random assignment with prob. $p$ $\Leftrightarrow$ for all possible $y_1$ and $y_0$, $$\Pr[D_i = 1 \mid Y_{1i} = y_1, Y_{0i} = y_0] = p$$
+
+. . .
+
+$\leadsto$ $\E[Y_{1i} \mid D_i = 1] = \E[Y_{1i} \mid D_i = 0]$ (and same for $Y_{0i}$)
+
+. . .
+
+$\leadsto$ Independence condition holds
+
+## Randomization and independence in samples
+
+In any given sample, treatment group might not be fully representative
+
+::: {.example}
+"randomization failure"
+
+e.g., possible --- but unlikely --- for everyone under 40 to end up in treatment and everyone 40+ to end up in comparison
+:::
+
+Difference of means only [approximates]{.underline} average treatment effect in sample
+
+Greater sample size $\Rightarrow$ closer approximation
+
+## Randomization and independence in samples
+
+Small sample $\rightarrow$ randomization failure easy
+
+```{r samp_small}
+#| echo: false
+#| cache: true
+#| fig-height: 3.75
+#| fig-width: 10
+set.seed(40404)
+df_wide <- tibble(
+  id  = 1:4,
+  age = c(25, 35, 45, 55),
+  y0  = 10 + age + runif(4, -5, 5)
+) |>
+  mutate(y1 = y0 + 10)
+df_long <- df_wide |>
+  pivot_longer(cols = c("y0", "y1"),
+               names_to = "potential_outcome",
+               values_to = "value") |>
+  mutate(potential_outcome = factor(potential_outcome, levels = c("y1", "y0")))
+
+df_long |>
+  ggplot(aes(x = age, y = value)) +
+  geom_point(aes(fill = potential_outcome), shape = 21, color = "black", size = 6) +
+  lims(y = c(35, 75)) +
+  labs(x = "Age", y = "Outcome", fill = "Potential Outcome")
+```
+
+4 observations $\leadsto$ 33% chance treatment and control separated by age
+
+## Randomization and independence in samples
+
+Small sample $\rightarrow$ randomization failure easy
+
+```{r samp_small_facet}
+#| echo: false
+#| cache: true
+#| fig-height: 3.75
+#| fig-width: 10
+
+## 3.  Generate all possible assignments for 2 out of 4 in treatment
+assignments <- combn(4, 2, simplify = FALSE)
+
+# 4.  Convert these to a lookup table: for each of the 6 ways,
+#     we mark which 'id' (1..4) is in treatment (TRUE/FALSE).
+assignment_lookup <- map2_dfr(
+  assignments,
+  seq_along(assignments),
+  ~ tibble(
+    assignment_id = .y,
+    id            = 1:4,
+    treat         = (df_wide$id %in% .x)
+  )
+)
+
+# 5.  Join back with the long data. Here 'id' matches exactly,
+#     so there are no extra NA rows.
+df_assigned <- df_long |>
+  inner_join(assignment_lookup, by = "id") |>
+  mutate(
+    alpha = case_when(
+      treat & potential_outcome == "y1" ~ 1,    # treat → y1 is opaque
+      treat & potential_outcome == "y0" ~ 0.2,  # treat → y0 is faint
+      !treat & potential_outcome == "y0" ~ 1,   # control → y0 is opaque
+      TRUE ~ 0.2                                # control → y1 is faint
+    )
+  )
+
+# 6.  Plot, facetting on assignment_id
+ggplot(df_assigned, aes(x = age, y = value)) +
+  geom_point(aes(fill = potential_outcome, alpha = alpha),
+             shape = 21, size = 4, color = "black") +
+  facet_wrap(~ assignment_id) +
+  scale_alpha_identity() +
+  lims(y = c(35, 75)) +
+  labs(x = "Age", y = "Outcome", fill = "Potential Outcome")
+```
+
+4 observations $\leadsto$ 33% chance treatment and control separated by age
+
+## Randomization and independence in samples
+
+Large sample $\rightarrow$ randomization failure much harder
+
+```{r samp_large}
+#| echo: false
+#| cache: true
+#| fig-height: 3.75
+#| fig-width: 10
+set.seed(40405)
+df_larger <- tibble(
+  age = runif(100, 25, 55),
+  y0  = 10 + age + runif(100, -5, 5)
+) |>
+  mutate(y1 = y0 + 10,
+         obs = sample(rep(c("y0", "y1"), 50))) |>
+  pivot_longer(cols = c("y0", "y1"),
+               names_to = "potential_outcome",
+               values_to = "value") |>
+  mutate(alpha = if_else(potential_outcome == obs, 1, 0.2),
+         potential_outcome = factor(potential_outcome, levels = c("y1", "y0")))
+df_larger |>
+  ggplot(aes(x = age, y = value)) +
+  geom_point(aes(fill = potential_outcome), shape = 21, color = "black", size = 6) +
+  lims(y = c(35, 75)) +
+  labs(x = "Age", y = "Outcome", fill = "Potential Outcome")
+```
+
+100 observations $\leadsto$ 0.000000000000000000000000002% chance treatment and control separated by age
+
+## Checking for randomization failure
+
+Can't directly check whether independence condition holds
+
+But can check for [balance]{.alert} on observable characteristics
+
+::: {.example}
+Should be measured [before]{.underline} treatment administered
+:::
+
+Ideal: Similar distribution between treatment and comparison
+
+## Checking for randomization failure
+
+```{r}
+#| echo: false
+#| cache: true
+#| fig-height: 5
+#| fig-width: 10
+df_larger |>
+  ggplot(aes(x = age, y = value)) +
+  geom_point(aes(fill = potential_outcome), shape = 21, color = "black", size = 6) +
+  lims(y = c(35, 75)) +
+  labs(x = "Age", y = "Outcome", fill = "Potential Outcome")
+```
+
+## Checking for randomization failure
+
+```{r}
+#| echo: false
+#| cache: true
+#| fig-height: 5
+#| fig-width: 10
+df_larger |>
+  ggplot(aes(x = age, y = value)) +
+  geom_point(aes(fill = potential_outcome, alpha = alpha), shape = 21, color = "black", size = 6) +
+  scale_alpha_identity() +
+  lims(y = c(35, 75)) +
+  labs(x = "Age", y = "Outcome", fill = "Potential Outcome")
+```
+
+## Checking for randomization failure
+
+```{r}
+#| echo: false
+#| cache: true
+#| fig-height: 5
+#| fig-width: 10
+df_larger |>
+  filter(alpha == 1) |>
+  mutate(group = factor(obs,
+                        levels = c("y1", "y0"),
+                        labels = c("treatment", "control"))) |>
+  ggplot(aes(x = age, y = group)) +
+  geom_boxplot()
+```
+
+# Wrapping up
+
+## What we did today
+
+1. Asked how social pressure affects voting
+   - Those who report more pressure also vote more...
+   - but lots of reasons to suspect that correlation isn't causal
+   
+2. Reviewed very basics of experimental design
+   - Prob of treatment should be same for all units
+   - Ideal is for treatment and control to be representative of full sample
+   
+3. Showed how randomization implies independence condition
+   - Equal assignment probability $\leadsto$ no correlation of potential outcomes and treatment assignment in population
+   - Randomization failure possible in any given sample, but unlikely in large sample
+
+## Next time
+
+1. Gerber, Green, Larimer's design and results
+2. Potential pitfalls of randomized experiments

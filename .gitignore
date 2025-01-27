@@ -6,4 +6,5 @@
 */*_files/
 
 # Other junk files
+.DS_Store
 *.Rhistory
