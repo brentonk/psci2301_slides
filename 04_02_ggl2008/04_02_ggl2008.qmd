@@ -1,0 +1,490 @@
+---
+title: The turnout experiment
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method:
+  method: mathjax
+  url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-01-29
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("04_02_ggl2008/04_02_ggl2008.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+
+## Recap --- the big picture
+
+What we want to know: [Average treatment effect]{.alert}
+
+- Difference in potential outcomes, $Y_{1i} - Y_{0i}$
+- ...averaged across all units in population
+
+. . .
+
+Key condition for inference: [Independence]{.alert}
+
+- No correlation b/w potential outcomes and assignment to treatment
+- Condition on the [assignment mechanism]{.underline}, not the causal effects
+
+. . .
+
+If independence holds: $$\underbrace{\avg[Y_i \mid D_i = 1] - \avg[Y_i \mid D_i = 0]}_{\text{observed diff in means}} \approx \underbrace{\E[Y_{1i} - Y_{0i}]}_{\text{avg treatment effect}}$$
+
+## Recap --- last class
+
+Randomized experiments as a path to causal inference
+
+#. Essentials of experimental design
+   - *Ex ante* prob of treatment should be same for all units
+   - Ideal is for treatment and control to be representative of full sample
+   
+#. Randomization and independence
+   - Equal assignment probability $\leadsto$ no correlation of potential outcomes and treatment assignment in population
+   - Randomization failure possible in any given sample, but unlikely in large sample
+
+## Today's agenda
+
+1. Going deeper on the Gerber, Green, Larimer experiment
+   - How they tailor treatments to address specific questions
+   - Downloading their data + analyzing it ourselves
+   
+2. Limitations of the experimental approach
+   - External validity concerns
+   - Ethical concerns
+
+
+# Defining treatment and comparisons
+
+## The research question
+
+Gerber, Green, Larimer 2008 (GGL): How does social pressure affect turnout?
+
+. . .
+
+What's manipulable here?
+
+- Whether someone feels social pressure $\leadsto$ not manipulable
+- Explicit exposure to social pressure $\leadsto$ plausibly manipulable
+
+. . .
+
+GGL's intervention: Induce exposure to social pressure via household mailer
+
+## GGL's treatment
+### The "Neighbors" condition
+
+<center>
+![](ggl_neighbors_mailer.png){height=5.5in}
+</center>
+
+## Isolating extrinsic pressure
+
+GGL want to know effect of **extrinsic** civic duty considerations
+
+But their mailer is a "bundled treatment", doing many things at once
+
+- Activating extrinsic pressure to vote, as intended
+- Activating intrinsic feelings of civic duty
+- Letting subjects know they're being studied --- [Hawthorne effect]{.alert}
+
+Comparison to "no mailer" alone wouldn't isolate extrinsic pressure effect
+
+## GGL's comparison groups
+### 1. "Civic duty" condition
+
+:::: {.columns}
+::: {.column width="50%"}
+![](ggl_civic_mailer.png)
+:::
+::: {.column width="50%"}
+✅ Activate intrinsic civic duty
+
+❌ Activate extrinsic pressure to vote
+
+❌ Let subjects know they're being studied
+:::
+::::
+
+## GGL's comparison groups {visibility="uncounted"}
+### 2. "Hawthorne" condition
+
+:::: {.columns}
+::: {.column width="50%"}
+![](ggl_hawthorne_mailer.png)
+:::
+::: {.column width="50%"}
+✅ Activate intrinsic civic duty
+
+❌ Activate extrinsic pressure to vote
+
+✅ Let subjects know they're being studied
+:::
+::::
+
+## GGL's comparison groups {visibility="uncounted"}
+### 3. "Self-treatment" condition
+
+:::: {.columns}
+::: {.column width="50%"}
+![](ggl_self_mailer.png){height=5.25in}
+:::
+::: {.column width="50%"}
+✅ Activate intrinsic civic duty
+
+🤷🏻‍♂️ Activate extrinsic pressure to vote
+
+✅ Let subjects know they're being studied
+:::
+::::
+
+## GGL's comparison groups {visibility="uncounted"}
+### 4. "Control" condition
+
+:::: {.columns}
+::: {.column width="50%"}
+(no mailer)
+:::
+::: {.column width="50%"}
+❌ Activate intrinsic civic duty
+
+❌‍ Activate extrinsic pressure to vote
+
+❌️️ Let subjects know they're being studied
+:::
+::::
+
+## Making relevant comparisons
+
+Which comparison is right?  [Depends on your research question]{.alert}
+
+. . .
+
+What's effect of strong social pressure vs no social pressure?
+
+::: {.example}
+avg[vote | neighbors] - avg[vote | civic duty]
+:::
+
+. . .
+
+What's effect of strong social pressure vs weak social pressure?
+
+::: {.example}
+avg[vote | neighbors] - avg[vote | self-treatment]
+:::
+
+. . .
+
+What's effect of knowing you're being studied?
+
+::: {.example}
+avg[vote | Hawthorne] - avg[vote | civic duty]
+:::
+
+. . .
+
+How cost-effective is {mailer} for get-out-the-vote?
+
+::: {.example}
+avg[vote | {mailer}] - avg[vote | control]
+:::
+
+
+# Analyzing the data
+
+## Getting the data
+
+Posted online at [Yale's institutional data repository](https://isps.yale.edu/research/data/d001)
+
+```{r download}
+#| message: false
+#| cache: true
+df_ggl <- read_csv("http://hdl.handle.net/10079/d3669799-4537-411e-b175-d9e837324c35")
+print(df_ggl)
+```
+
+```{r order}
+#| echo: false
+## Put treatments in same order as in GGL article
+df_ggl <- df_ggl |>
+  mutate(treatment = fct_relevel(treatment, "Control", "Civic Duty",
+                                 "Hawthorne", "Self"))
+```
+
+## Distribution of treatments
+
+How many individuals in each condition?
+
+```{r condition_dist}
+#| cache: true
+df_ggl |>
+  count(treatment) |>
+  mutate(percent = 100 * n / sum(n))
+```
+
+## Checking for balance: Year of birth
+
+```{r balance_yob}
+#| cache: true
+ggplot(df_ggl, aes(x = yob, y = treatment)) +
+  geom_boxplot()
+```
+
+## Checking for balance: Household size
+
+```{r balance_hh_size}
+#| cache: true
+ggplot(df_ggl, aes(x = hh_size)) +
+  geom_bar() +
+  facet_wrap(~ treatment, ncol = 3, scales = "free_y")
+```
+
+## Checking for balance: Sex
+
+```{r balance_sex}
+#| cache: true
+df_ggl |>
+  group_by(treatment) |>
+  summarize(pct_female = 100 * mean(sex == "female"))
+```
+
+## Checking for balance: Voting in prior elections
+
+```{r balance_voting}
+#| cache: true
+df_ggl |>
+  mutate(p2004 = str_to_lower(p2004)) |>  # make consistent w/others
+  group_by(treatment) |>
+  summarize(across(g2000:p2004, ~ 100 * mean(. == "yes")))
+```
+
+## Group averages and differences
+
+```{r averages}
+#| cache: true
+df_results <- df_ggl |>
+  group_by(treatment) |>
+  summarize(turnout = 100 * mean(voted == "Yes")) |>
+  mutate(vs_control = turnout - turnout[treatment == "Control"],
+         vs_civic = turnout - turnout[treatment == "Civic Duty"],
+         vs_hawthorne = turnout - turnout[treatment == "Hawthorne"],
+         vs_self = turnout - turnout[treatment == "Self"])
+
+print(df_results)
+```
+
+## Making relevant comparisons
+
+What's effect of strong social pressure vs no social pressure?
+
+::: {.example}
+avg[vote | neighbors] - avg[vote | civic duty]
+:::
+
+```{r}
+df_results$vs_civic[df_results$treatment == "Neighbors"]
+```
+
+. . .
+
+<hr>
+
+What's effect of strong social pressure vs weak social pressure?
+
+::: {.example}
+avg[vote | neighbors] - avg[vote | self-treatment]
+:::
+
+```{r}
+df_results$vs_self[df_results$treatment == "Neighbors"]
+```
+
+## Making relevant comparisons {visibility="uncounted"}
+
+What's effect of knowing you're being studied?
+
+::: {.example}
+avg[vote | Hawthorne] - avg[vote | civic duty]
+:::
+
+```{r}
+df_results$vs_civic[df_results$treatment == "Hawthorne"]
+```
+
+. . .
+
+<hr>
+
+How cost-effective is {mailer} for get-out-the-vote?
+
+::: {.example}
+avg[vote | {mailer}] - avg[vote | control]
+:::
+
+```{r}
+df_results |> select(treatment, vs_control) |> deframe()
+```
+
+## Gerber, Green, Larimer: Takeaways
+
+For theories of voting:
+
+- Civic duty considerations positively affect turnout
+- Extrinsic motivations outweigh intrinsic motivations
+
+For political practitioners:
+
+- Surveillance + shaming works to get out the vote
+- More cost effective than other methods
+  - Neighbors mailing: $1.93/vote
+  - Self-treatment mailing: $3.24/vote
+  - Door-to-door canvassing: $20/vote
+  - Phone calls: $35/vote
+  
+
+# Limitations of the experimental method
+
+## External validity
+
+What's the actual population the experimental sample was drawn from?
+
+::: {.incremental}
+- Registered voters
+- ... in Michigan (but not the Upper Peninsula!), in 2006
+- ... living on blocks with 90%+ single family homes and 4+ households
+- ... who voted in the 2004 general election
+- ... who weren't too likely to vote by absentee ballot
+- ... or to be Democratic primary voters
+:::
+
+::: {.fragment}
+If you were trying to get out the vote for the 2023 Nashville mayoral runoff, how confident would you be in using the social pressure strategy?
+:::
+
+## Overcoming external validity concerns
+
+[Replication]{.alert} of similar experimental design under alternative conditions
+
+- Greater confidence in generalizability across contexts
+- Less worry about [sampling error]{.alert}
+  - Not a major concern with 38,000+ obs per treatment group
+
+. . .
+
+Tons of replication efforts for GGL's experiment
+
+- [Mann 2010](https://doi.org/10.1007/s11109-010-9124-y) in the 2007 Kentucky gubernatorial election
+- [Panagopoulos 2010](https://doi.org/10.1007/s11109-010-9114-0) in 2007 elections in Monticello, IA and Holland, MI
+- [Rogers et al 2017](https://doi.org/10.1016/j.electstud.2017.02.004) in the 2012 Wisconsin gubernatorial recall
+- [Gerber et al 2017](https://doi.org/10.1177/1532673X16686556) across 17 states in 2014 midterms
+
+::: {style="margin-top: -40px;"}
+(but most polisci experiments don't get nearly this much attention!)
+:::
+
+## Costliness
+
+Not trivial to replicate a field experiment of this scope
+
+Just sending out the mailers would cost about $70,000
+
+```{r}
+cost_per_mailer <- 0.30
+inflation_since_2006 <- 1.548
+number_of_mailers <- sum(df_ggl$treatment != "Control")
+
+cost_per_mailer * inflation_since_2006 * number_of_mailers
+```
+
+- Many interesting questions won't get a large-scale experimental study
+- Need to draw inferences from "messier" research designs
+
+## Ethics: Micro
+
+:::: {.columns}
+::: {.column width="60%"}
+![](ggl_neighbors_mailer.png)
+:::
+::: {.column width="40%"}
+Info is from public records
+
+...but people may not expect it to be publicized
+
+*"many recipients of the Neighbors message called the phone number provided on the mailing and demanded to be removed from future mailing lists"*
+
+Is it ok to make people [feel]{.underline} like their privacy has been violated?
+:::
+::::
+
+## Ethics: Macro
+
+Study population was a non-representative subset of eligible voters
+
+- Live on streets with 4+ households, but few apartments $\leadsto$
+  - wealthier than average
+  - more suburban, less rural or urban than average
+- Unlikely to vote in Dem primary $\leadsto$
+  - whiter than average
+  - more male and/or married than average
+
+Could you change not just turnout but also [outcomes]{.underline} by only intervening on this subset of eligible voters?
+
+# Wrapping up
+
+## What we did today
+
+1. Discussed the specifics of GGL's experimental design
+   - Treatment tailored to study extrinsic component of civic duty
+   - Different comparisons capture different questions
+   - Evidence suggests relatively large effect of extrinsic concern
+   
+2. Discussed potential issues with experiments
+   - External validity concerns $\leadsto$ Replication required
+   - Ethical concerns $\leadsto$ Manipulating treatment assignment means we're [affecting]{.underline} the political processes we set out to study
+
+## Next week
+
+[Problem Set 2]{.alert} to be posted by Friday 1/31, due Friday 2/7
+
+::: {.example}
+Problem Set 1 will be graded by Friday too
+:::
+
+Next week's topic --- [statistical inference]{.alert}
+
+::: {.example}
+How certain can we be about any particular result?
+
+How much data is enough?
+:::
+
+1. Read *Mastering 'Metrics* pages 33--46
+2. Read ebook chapter ["The Most Dangerous Equation"](https://matheusfacure.github.io/python-causality-handbook/03-Stats-Review-The-Most-Dangerous-Equation.html)

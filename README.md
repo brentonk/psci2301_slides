@@ -13,3 +13,4 @@ All slides are written in Quarto using [my fork](https://github.com/brentonk/qua
 | The building blocks of statistics | 2025-01-15 | [PDF](/02_02_stats_building_blocks/02_02_stats_building_blocks.pdf)     | [QMD](/02_02_stats_building_blocks/02_02_stats_building_blocks.qmd)     |
 | The potential outcomes model      | 2025-01-22 | [PDF](/03_01_potential_outcomes/03_01_potential_outcomes.pdf)           | [QMD](/03_01_potential_outcomes/03_01_potential_outcomes.qmd)           |
 | Randomized experiments            | 2025-01-27 | [PDF](/04_01_randomization/04_01_randomization.pdf)                     | [QMD](/04_01_randomization/04_01_randomization.qmd)                     |
+| The turnout experiment            | 2025-01-29 | [PDF](/04_02_ggl2008/04_02_ggl2008.pdf)                                 | [QMD](/04_02_ggl2008/04_02_ggl2008.qmd)                                 |
