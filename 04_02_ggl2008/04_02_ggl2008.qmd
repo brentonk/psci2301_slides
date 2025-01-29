@@ -190,7 +190,7 @@ Which comparison is right?  [Depends on your research question]{.alert}
 What's effect of strong social pressure vs no social pressure?
 
 ::: {.example}
-avg[vote | neighbors] - avg[vote | civic duty]
+avg[vote | neighbors] - avg[vote | Hawthorne]
 :::
 
 . . .
@@ -306,11 +306,11 @@ print(df_results)
 What's effect of strong social pressure vs no social pressure?
 
 ::: {.example}
-avg[vote | neighbors] - avg[vote | civic duty]
+avg[vote | neighbors] - avg[vote | Hawthorne]
 :::
 
 ```{r}
-df_results$vs_civic[df_results$treatment == "Neighbors"]
+df_results$vs_hawthorne[df_results$treatment == "Neighbors"]
 ```
 
 . . .
