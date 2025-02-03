@@ -1,0 +1,531 @@
+---
+title: "Statistical inference in theory"
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method:
+  method: mathjax
+  url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-02-03
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("05_01_inference_theory/05_01_inference_theory.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+
+## Recap
+
+Last week --- randomized experiments and causal inference
+
+1.  The importance of randomized treatment assignment
+    - Randomization $\leadsto$ treatment/control groups broadly representative
+    - Treatment status uncorrelated w/[everything]{.underline} $\leadsto$ independence holds
+    - Difference in group means $\approx$ Average treatment effect
+    
+2.  Experiments in practice
+    - The Gerber, Green, Larimer study of social pressure and turnout
+    - Designing treatments to isolate the right effects
+    - Working through external validity and ethics concerns
+
+## Today's agenda
+
+[Inference:]{.alert} How much do we learn about a population from sample data?
+
+Key to the statistical approach --- quantifying how wrong we could plausibly be
+
+1.  Law of large numbers
+    - Sample mean converges to population mean
+    - Key question for inference: How much data do we have?
+
+2.  Central limit theorem
+    - Sample mean is approximately normally distributed across samples
+    - Lets us calculate "margin of error" given sample size
+    - ...or sample size we'd need for a given margin of error
+    
+3.  Brief refresher on philosophy of hypothesis testing
+
+
+# Law of large numbers
+
+## Philosophy of inference
+
+::: {.callout-tip}
+## Starting simple: Inference about the mean
+The mean gives us the easiest illustration of basic inferential principles.
+
+Similar procedures for other stats like correlation, regression coefficient, treatment effect.
+:::
+
+We want to know the population mean $E[X_i]$
+
+::: {.example}
+e.g., average opinion of Trump on 0--100 scale among all US adults
+:::
+
+But we can only calculate the sample mean $\avg[X_i]$
+
+::: {.example}
+e.g., average opinion of Trump on 0--100 scale among survey respondents
+:::
+
+How far off could the sample mean plausibly be?
+
+## Random sampling
+
+Standard inference procedures assume a [probability sample]{.alert}
+
+- *Ex ante*, every unit in population has same probability of being sampled
+- Ways this might fail
+  - Convenience sample like an online poll or asking whoever's around
+  - Differential non-response: some pop. members more prone to refuse
+  
+Also typically assume [independence]{.alert} across observations
+
+- Loosely: $X_i$ above mean doesn't predict whether $X_j$ is above mean
+- May fail if we sample sets of units instead of individual units
+  - e.g., households, classrooms
+- But we can use advanced methods to make corrections in these cases
+
+## Accuracy of the sample mean
+
+[Law of Large Numbers (LLN):]{.alert} As sample size $N$ increases, $\avg[X_i] \approx \E[X_i]$
+
+::: {.callout-note .fragment}
+## The Law of Large Numbers: Formal statement
+For any difference $\delta > 0$ from the population mean and any probability $p > 0$, there is a sample size $N$ such that there's a probability $p$ or lower of drawing a sample of size $N$ where $$\left|\vphantom{\sum}\avg[X_i] - \E[X_i]\right| > \delta.$$
+:::
+
+. . .
+
+Any *given* sample might have a sample mean far from the population mean
+
+...but the chance of a big difference gets smaller and smaller with $N$
+
+This is true even when the population of units is [infinite]{.underline}
+
+## Law of large numbers, illustrated
+
+Imagine an infinite population with this distribution of opinions toward Trump
+
+```{r dist-create}
+#| echo: false
+#| cache: true
+x_therm <- 0:100
+prob_therm <- 0.4 * dnorm(x_therm, mean = 0, sd = 10) +
+  0.35 * dnorm(x_therm, mean = 100, sd = 10) +
+  0.25 * dnorm(x_therm, mean = 50, sd = 20)
+prob_therm <- prob_therm / sum(prob_therm)
+dist_mean <- round(sum(prob_therm * x_therm), 1)
+df_therm <- tibble(therm = x_therm, prob = prob_therm)
+plot_dist <- ggplot(df_therm, aes(x = therm, y = prob)) +
+  geom_bar(stat = "identity") +
+  scale_x_continuous("Feeling toward Trump") +
+  scale_y_continuous("Probability")
+plot_dist
+```
+
+Population mean: $\E[X_i] = \sum_{x=0}^{100} x \cdot \Pr(X_i = x) \approx `r dist_mean`$
+
+## Law of large numbers, illustrated {visibility="uncounted"}
+
+```{r lln-sim}
+#| cache: true
+#| dependson: dist-create
+#| echo: false
+library("foreach")
+sample_sizes <- c(5, 10, 20, 50, 100, 250, 500, 1000, 2500, 5000)
+n_sims <- 1000
+set.seed(3813)
+df_lln_sim <- foreach (i = 1:n_sims, .combine = rbind) %do% {
+  samp <- sample(x_therm, max(sample_sizes), replace = TRUE, prob = prob_therm)
+  map_dfr(sample_sizes, ~{
+    samp_mean <- mean(samp[1:.x])
+    tibble(sample_size = .x, sample_mean = samp_mean)
+  }) |> add_column(batch = i)
+}
+```
+
+Start with a sample of 5 units, calculate the sample mean
+
+```{r}
+#| cache: true
+#| dependson: lln-sim
+#| echo: false
+df_lln_sim |>
+  filter(batch == 1, sample_size <= 5) |>
+  ggplot(aes(x = sample_size, y = sample_mean)) +
+  geom_point() +
+  geom_hline(yintercept = dist_mean, linetype = "dashed", color = "blue") +
+  scale_x_log10("Sample size",
+                limits = range(sample_sizes),
+                breaks = sample_sizes) +
+  scale_y_continuous("Sample mean", limits = c(0, 100))
+```
+
+## Law of large numbers, illustrated {visibility="uncounted"}
+
+Now increase sample size to 10 units
+
+```{r}
+#| cache: true
+#| dependson: lln-sim
+#| echo: false
+df_lln_sim |>
+  filter(batch == 1, sample_size <= 10) |>
+  ggplot(aes(x = sample_size, y = sample_mean)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = dist_mean, linetype = "dashed", color = "blue") +
+  scale_x_log10("Sample size",
+                limits = range(sample_sizes),
+                breaks = sample_sizes) +
+  scale_y_continuous("Sample mean", limits = c(0, 100))
+```
+
+## Law of large numbers, illustrated {visibility="uncounted"}
+
+Keep gradually increasing the sample size ...
+
+```{r}
+#| cache: true
+#| dependson: lln-sim
+#| echo: false
+df_lln_sim |>
+  filter(batch == 1, sample_size <= 250) |>
+  ggplot(aes(x = sample_size, y = sample_mean)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = dist_mean, linetype = "dashed", color = "blue") +
+  scale_x_log10("Sample size",
+                limits = range(sample_sizes),
+                breaks = sample_sizes) +
+  scale_y_continuous("Sample mean", limits = c(0, 100))
+```
+
+## Law of large numbers, illustrated {visibility="uncounted"}
+
+Keep gradually increasing the sample size ...
+
+```{r}
+#| cache: true
+#| dependson: lln-sim
+#| echo: false
+df_lln_sim |>
+  filter(batch == 1) |>
+  ggplot(aes(x = sample_size, y = sample_mean)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = dist_mean, linetype = "dashed", color = "blue") +
+  scale_x_log10("Sample size",
+                limits = range(sample_sizes),
+                breaks = sample_sizes) +
+  scale_y_continuous("Sample mean", limits = c(0, 100))
+```
+
+## Law of large numbers, illustrated {visibility="uncounted"}
+
+...then repeat the process all over again with a totally new sample
+
+```{r}
+#| cache: true
+#| dependson: lln-sim
+#| echo: false
+df_lln_sim |>
+  filter(batch <= 1) |>
+  ggplot(aes(x = sample_size, y = sample_mean, group = batch)) +
+  geom_line(alpha = 0.3) +
+  geom_hline(yintercept = dist_mean, linetype = "dashed", color = "blue") +
+  scale_x_log10("Sample size",
+                limits = range(sample_sizes),
+                breaks = sample_sizes) +
+  scale_y_continuous("Sample mean", limits = c(0, 100))
+```
+
+## Law of large numbers, illustrated {visibility="uncounted"}
+
+...then repeat the process all over again with a totally new sample
+
+```{r}
+#| cache: true
+#| dependson: lln-sim
+#| echo: false
+df_lln_sim |>
+  filter(batch <= 2) |>
+  ggplot(aes(x = sample_size, y = sample_mean, group = batch)) +
+  geom_line(alpha = 0.3) +
+  geom_hline(yintercept = dist_mean, linetype = "dashed", color = "blue") +
+  scale_x_log10("Sample size",
+                limits = range(sample_sizes),
+                breaks = sample_sizes) +
+  scale_y_continuous("Sample mean", limits = c(0, 100))
+```
+
+## Law of large numbers, illustrated {visibility="uncounted"}
+
+...then repeat the process all over again with a totally new sample
+
+```{r}
+#| cache: true
+#| dependson: lln-sim
+#| echo: false
+df_lln_sim |>
+  filter(batch <= 5) |>
+  ggplot(aes(x = sample_size, y = sample_mean, group = batch)) +
+  geom_line(alpha = 0.3) +
+  geom_hline(yintercept = dist_mean, linetype = "dashed", color = "blue") +
+  scale_x_log10("Sample size",
+                limits = range(sample_sizes),
+                breaks = sample_sizes) +
+  scale_y_continuous("Sample mean", limits = c(0, 100))
+```
+
+## Law of large numbers, illustrated {visibility="uncounted"}
+
+...then repeat the process all over again with a totally new sample
+
+```{r}
+#| cache: true
+#| dependson: lln-sim
+#| echo: false
+df_lln_sim |>
+  filter(batch <= 10) |>
+  ggplot(aes(x = sample_size, y = sample_mean, group = batch)) +
+  geom_line(alpha = 0.3) +
+  geom_hline(yintercept = dist_mean, linetype = "dashed", color = "blue") +
+  scale_x_log10("Sample size",
+                limits = range(sample_sizes),
+                breaks = sample_sizes) +
+  scale_y_continuous("Sample mean", limits = c(0, 100))
+```
+
+## Law of large numbers, illustrated {visibility="uncounted"}
+
+...then repeat the process all over again with a totally new sample
+
+```{r}
+#| cache: true
+#| dependson: lln-sim
+#| echo: false
+df_lln_sim |>
+  filter(batch <= 100) |>
+  ggplot(aes(x = sample_size, y = sample_mean, group = batch)) +
+  geom_line(alpha = 0.3) +
+  geom_hline(yintercept = dist_mean, linetype = "dashed", color = "blue") +
+  scale_x_log10("Sample size",
+                limits = range(sample_sizes),
+                breaks = sample_sizes) +
+  scale_y_continuous("Sample mean", limits = c(0, 100))
+```
+
+## Law of large numbers, illustrated {visibility="uncounted"}
+
+Lower proportion of big errors as sample size increases
+
+```{r}
+#| cache: true
+#| dependson: lln-sim
+#| echo: false
+df_lln_sim |>
+  ggplot(aes(x = sample_size, y = sample_mean, group = batch)) +
+  geom_line(alpha = 0.3) +
+  geom_hline(yintercept = dist_mean, linetype = "dashed", color = "blue") +
+  scale_x_log10("Sample size",
+                limits = range(sample_sizes),
+                breaks = sample_sizes) +
+  scale_y_continuous("Sample mean", limits = c(0, 100))
+```
+
+## Law of large numbers: Summary
+
+Lessons to take from the law of large numbers:
+
+- The sample mean is a good guide to the population mean
+- Especially when the sample size is large
+
+. . .
+
+Unanswered questions:
+
+- How far off is my sample mean from the population mean?
+- How far off is a sample mean [likely to be]{.underline}?
+
+# Central limit theorem
+
+## From LLN to CLT
+
+LLN tells us *that* the sample mean $\approx$ the population mean in large samples
+
+Central Limit Theorem (CLT) tells us *how* close we can expect it to be
+
+::: {.callout-note}
+## Central Limit Theorem
+If the sample size $N$ is large, then the distribution of the sample mean $\avg[X_i]$ across samples is approximately normal, with mean $\E[X_i]$ and standard deviation $\sqrt{\V[X_i]/N}$ (aka the [standard error]{.alert}).
+:::
+
+- Normal distribution: bell curve shaped
+  - 68% of observations within 1sd of mean
+  - 95% of observations within 2sd of mean
+- CLT does [not]{.underline} assume the distribution of $X_i$ itself is normal
+
+## Central limit theorem, illustrated
+
+```{r plot-clt}
+#| echo: false
+#| message: false
+#| dependson: dist-create
+#| cache: true
+dist_sd <- sqrt(sum(prob_therm * (x_therm - dist_mean)^2))
+plot_clt <- function(size) {
+  se <- 1.96 * dist_sd / sqrt(size)
+  bw <- 0.25 * se
+  df_lln_sim |>
+    filter(sample_size == !!size) |>
+    ggplot(aes(x = sample_mean)) +
+    geom_histogram(binwidth = bw) +
+    scale_x_continuous("Distribution of sample means", limits = c(0, 100)) +
+    geom_vline(xintercept = dist_mean, linetype = "dashed", color = "blue") +
+    geom_vline(xintercept = dist_mean + c(1, -1) * se,
+               linetype = "dashed",
+               color = "red") +
+    ggtitle(str_c("Samples of size ", size,
+                  " — 95% of sample means w/in ",
+                  round(se, 1),
+                  " of population mean"))
+}
+```
+
+```{r}
+#| echo: false
+#| dependson: plot-clt
+#| cache: true
+plot_clt(5)
+```
+
+## Central limit theorem, illustrated {visibility="uncounted"}
+
+```{r}
+#| echo: false
+#| dependson: plot-clt
+#| cache: true
+plot_clt(10)
+```
+
+## Central limit theorem, illustrated {visibility="uncounted"}
+
+```{r}
+#| echo: false
+#| dependson: plot-clt
+#| cache: true
+plot_clt(50)
+```
+
+## Central limit theorem, illustrated {visibility="uncounted"}
+
+```{r}
+#| echo: false
+#| dependson: plot-clt
+#| cache: true
+plot_clt(100)
+```
+
+## Central limit theorem, illustrated {visibility="uncounted"}
+
+```{r}
+#| echo: false
+#| dependson: plot-clt
+#| cache: true
+plot_clt(500)
+```
+
+## Central limit theorem, illustrated {visibility="uncounted"}
+
+```{r}
+#| echo: false
+#| dependson: plot-clt
+#| cache: true
+plot_clt(1000)
+```
+
+## Using the central limit theorem
+
+95% of sample means within this margin of population mean: $$\frac{2 \cdot \sd[X_i]}{\sqrt{N}}$$
+
+. . .
+
+Diminishing returns: Must [quadruple]{.underline} sample size to halve the margin of error
+
+. . .
+
+If you want a 95% chance of sample mean within $M$ of population mean, need sample of $$N \geq \frac{4 \cdot \sd[X_i]^2}{M^2}$$
+
+## Central limit theorem with binary variables
+
+One issue with calculating needed $N$: $\sd[X_i]$ possibly unknown in advance
+
+But if $X_i$ is binary, we know $\sd[X_i] = \sqrt{\E[X_i] (1 - \E[X_i])} \leq 0.5$
+
+Allows us to figure out "worst case" sample sizes
+
+```{r}
+tibble(desired_margin = seq(0.07, 0.01, by = -0.01),
+       needed_sample = ceiling(4 * 0.25 / desired_margin^2))
+```
+
+# Hypothesis testing
+
+## Basics of hypothesis testing
+
+Philosophy: Set up procedures with a [known failure rate]{.alert}
+
+Procedure:
+
+::: {.incremental}
+1. Set up a "null hypothesis" --- e.g., "50% of voters approve of Trump"
+2. Identify the "test statistic" to calculate
+   - Usually statistic of interest divided by its standard error
+3. Calculate distribution of test statistic if null hypothesis is true
+   - CLT is what makes this feasible!
+4. Compare to "critical value" to reject null hypothesis with known failure rate
+   - If null hypothesis is true, then will (incorrectly) reject in designated percentage of samples
+   - Can't tell from any given sample if null is false, or if we were unlucky!
+:::
+
+
+# Wrapping up
+
+## What we did today
+
+1.  LLN: As $N$ increases, sample mean is less likely to be too far off the population mean
+
+2.  CLT: For $N \geq 30$ or so, expect sample mean to be within $2 \sd[X_i] / \sqrt{N}$ of pop mean in 95% of samples
+
+3.  Hypothesis testing: Leverage the CLT to set up tests with a known "failure" rate in case null hypothesis is true
+
+Next time --- Inference for treatment effects

@@ -14,3 +14,4 @@ All slides are written in Quarto using [my fork](https://github.com/brentonk/qua
 | The potential outcomes model      | 2025-01-22 | [PDF](/03_01_potential_outcomes/03_01_potential_outcomes.pdf)           | [QMD](/03_01_potential_outcomes/03_01_potential_outcomes.qmd)           |
 | Randomized experiments            | 2025-01-27 | [PDF](/04_01_randomization/04_01_randomization.pdf)                     | [QMD](/04_01_randomization/04_01_randomization.qmd)                     |
 | The turnout experiment            | 2025-01-29 | [PDF](/04_02_ggl2008/04_02_ggl2008.pdf)                                 | [QMD](/04_02_ggl2008/04_02_ggl2008.qmd)                                 |
+| Statistical inference in theory   | 2025-02-03 | [PDF](/05_01_inference_theory/05_01_inference_theory.pdf)               | [QMD](/05_01_inference_theory/05_01_inference_theory.qmd)               |
