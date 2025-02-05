@@ -1,0 +1,563 @@
+---
+title: "Statistical inference in practice"
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method:
+  method: mathjax
+  url: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-02-05
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("05_02_inference_practice/05_02_inference_practice.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\se}{se}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+
+## Recap
+
+Last time --- theoretical foundations of statistical inference
+
+1.  Law of large numbers (LLN)
+    - Sample mean converges to population mean
+    - Key question for inference: How much data do we have?
+
+2.  Central limit theorem (CLT)
+    - Sample mean is approximately normally distributed across samples
+    - Lets us calculate "margin of error" given sample size
+    - ...or sample size we'd need for a given margin of error
+
+3.  Hypothesis testing: Leverage the CLT to set up tests with a known "failure" rate in case null hypothesis is true
+
+## Today's agenda
+
+1. Inference for regression coefficients
+   - Quick review of regression model
+   - Influences on magnitude of standard errors
+   
+2. Calculations in R
+   - Estimating treatment effects with regression
+   - Calculating standard errors
+   - Confidence intervals
+   
+3. Standard errors when observations aren't independent
+   - Problem situation: above-predicted $Y_i$ $\leadsto$ above-predicted $Y_j$
+   - Why this leads to having less data than we think
+   - Clustered standard errors in R
+
+
+# Inference for treatment effects
+
+## A quick regression recap
+
+The bivariate linear regression model: $$\E[Y_i \mid X_i = x] = \alpha + \beta x$$
+
+$\alpha$ is the [intercept]{.alert}, $\beta$ is the [slope]{.alert}
+
+::: {.callout-tip .fragment}
+## Regression with binary X
+Suppose $X_i$ is binary, so every $X_i = 0$ or $X_i = 1$.
+
+Slope now equals difference of means: $$\beta = \E[Y_i \mid X_i = 1] - \E[Y_i \mid X_i = 0]$$
+
+Intercept now equals average in the 0 group: $$\alpha = \E[Y_i \mid X_i = 0]$$
+:::
+
+## The regression slope and the difference of means
+
+```{r ggl}
+#| cache: true
+#| message: false
+df_ggl <-
+  read_csv("http://hdl.handle.net/10079/d3669799-4537-411e-b175-d9e837324c35") |>
+  mutate(y = if_else(voted == "Yes", 1, 0))
+```
+
+```{r}
+#| output-location: column
+## Difference of means
+mean(df_ggl$y[df_ggl$treatment == "Neighbors"]) -
+  mean(df_ggl$y[df_ggl$treatment == "Control"])
+```
+
+```{r}
+#| output-location: column
+## Regression coefficients
+df_ggl <- df_ggl |>
+    mutate(treat = case_when(
+           treatment == "Neighbors" ~ 1,
+           treatment == "Control" ~ 0,
+           TRUE ~ NA
+         ))
+lm(y ~ treat, data = df_ggl)
+```
+
+## The standard error of the regression slope
+
+Slope estimate formula: $$\hat{\beta} = \frac{\cov[X_i, Y_i]}{\var[X_i]}$$
+
+. . .
+
+Standard error --- extent of variation in estimate across samples of size $N$:
+$$\sd[\hat{\beta}] = \frac{\sd[Y_i - \hat{\alpha} - \hat{\beta} X_i]}{\sqrt{N} \sd[X_i]} = \frac{1}{\sqrt{N}} \cdot \frac{\text{residual std deviation}}{\text{std deviation of ind var}}$$
+
+. . .
+
+- More "unpredictable" outcome $\leadsto$ bigger residuals $\leadsto$ higher std error
+- Greater sample size $\leadsto$ lower std error
+- More variation in independent variable $\leadsto$ lower std error
+  - for a binary treatment, most accurate results if assignment is 50-50
+
+## Residual variance increases standard error
+
+Data simulated from regression equation $Y_i = 1 + 2 X_i + \epsilon_i$
+
+```{r sim_rse_low}
+#| cache: true
+#| echo: false
+set.seed(33)
+n <- 25
+samples <- 9
+tibble(x = runif(samples * n, -1, 1),
+       y = 1 + 2 * x + runif(samples * n, -0.1, 0.1),
+       group = rep(1:samples, each = n)) |>
+  group_by(group) |>
+  mutate(slope = cov(x, y) / var(x)) |>
+  ungroup() |>
+  mutate(lbl = str_c("(", group, ") slope est = ", round(slope, 2))) |>
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ lbl, ncol = 3) +
+  lims(y = c(-2, 4))
+```
+
+## Residual variance increases standard error {visibility="uncounted"}
+
+Data simulated from regression equation $Y_i = 1 + 2 X_i + \epsilon_i$
+
+```{r sim_rse_med}
+#| cache: true
+#| echo: false
+set.seed(33)
+n <- 25
+samples <- 9
+tibble(x = runif(samples * n, -1, 1),
+       y = 1 + 2 * x + runif(samples * n, -0.5, 0.5),
+       group = rep(1:samples, each = n)) |>
+  group_by(group) |>
+  mutate(slope = cov(x, y) / var(x)) |>
+  ungroup() |>
+  mutate(lbl = str_c("(", group, ") slope est = ", round(slope, 2))) |>
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ lbl, ncol = 3) +
+  lims(y = c(-2, 4))
+```
+
+## Residual variance increases standard error {visibility="uncounted"}
+
+Data simulated from regression equation $Y_i = 1 + 2 X_i + \epsilon_i$
+
+```{r sim_rse_high}
+#| cache: true
+#| echo: false
+set.seed(33)
+n <- 25
+samples <- 9
+tibble(x = runif(samples * n, -1, 1),
+       y = 1 + 2 * x + runif(samples * n, -1, 1),
+       group = rep(1:samples, each = n)) |>
+  group_by(group) |>
+  mutate(slope = cov(x, y) / var(x)) |>
+  ungroup() |>
+  mutate(lbl = str_c("(", group, ") slope est = ", round(slope, 2))) |>
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ lbl, ncol = 3) +
+  lims(y = c(-2, 4))
+```
+
+## Sample size decreases standard error
+
+Data simulated from regression equation $Y_i = 1 + 2 X_i + \epsilon_i$
+
+```{r sim_n_low}
+#| cache: true
+#| echo: false
+set.seed(33)
+n <- 10
+samples <- 9
+tibble(x = runif(samples * n, -1, 1),
+       y = 1 + 2 * x + runif(samples * n, -1, 1),
+       group = rep(1:samples, each = n)) |>
+  group_by(group) |>
+  mutate(slope = cov(x, y) / var(x)) |>
+  ungroup() |>
+  mutate(lbl = str_c("(", group, ") slope est = ", round(slope, 2))) |>
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ lbl, ncol = 3) +
+  lims(y = c(-2, 4))
+```
+
+## Sample size decreases standard error {visibility="uncounted"}
+
+Data simulated from regression equation $Y_i = 1 + 2 X_i + \epsilon_i$
+
+```{r sim_n_med}
+#| cache: true
+#| echo: false
+set.seed(33)
+n <- 50
+samples <- 9
+tibble(x = runif(samples * n, -1, 1),
+       y = 1 + 2 * x + runif(samples * n, -1, 1),
+       group = rep(1:samples, each = n)) |>
+  group_by(group) |>
+  mutate(slope = cov(x, y) / var(x)) |>
+  ungroup() |>
+  mutate(lbl = str_c("(", group, ") slope est = ", round(slope, 2))) |>
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ lbl, ncol = 3) +
+  lims(y = c(-2, 4))
+```
+
+## Sample size decreases standard error {visibility="uncounted"}
+
+Data simulated from regression equation $Y_i = 1 + 2 X_i + \epsilon_i$
+
+```{r sim_n_high}
+#| cache: true
+#| echo: false
+set.seed(33)
+n <- 500
+samples <- 9
+tibble(x = runif(samples * n, -1, 1),
+       y = 1 + 2 * x + runif(samples * n, -1, 1),
+       group = rep(1:samples, each = n)) |>
+  group_by(group) |>
+  mutate(slope = cov(x, y) / var(x)) |>
+  ungroup() |>
+  mutate(lbl = str_c("(", group, ") slope est = ", round(slope, 2))) |>
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ lbl, ncol = 3) +
+  lims(y = c(-2, 4))
+```
+
+## X variation decreases standard error
+
+Data simulated from regression equation $Y_i = 1 + 2 X_i + \epsilon_i$
+
+```{r sim_xvar_low}
+#| cache: true
+#| echo: false
+set.seed(33)
+n <- 50
+samples <- 9
+tibble(x = runif(samples * n, -0.25, 0.25),
+       y = 1 + 2 * x + runif(samples * n, -1, 1),
+       group = rep(1:samples, each = n)) |>
+  group_by(group) |>
+  mutate(slope = cov(x, y) / var(x)) |>
+  ungroup() |>
+  mutate(lbl = str_c("(", group, ") slope est = ", round(slope, 2))) |>
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ lbl, ncol = 3) +
+  lims(x = c(-1, 1), y = c(-2, 4))
+```
+
+## X variation decreases standard error {visibility="uncounted"}
+
+Data simulated from regression equation $Y_i = 1 + 2 X_i + \epsilon_i$
+
+```{r sim_xvar_med}
+#| cache: true
+#| echo: false
+set.seed(33)
+n <- 50
+samples <- 9
+tibble(x = runif(samples * n, -0.5, 0.5),
+       y = 1 + 2 * x + runif(samples * n, -1, 1),
+       group = rep(1:samples, each = n)) |>
+  group_by(group) |>
+  mutate(slope = cov(x, y) / var(x)) |>
+  ungroup() |>
+  mutate(lbl = str_c("(", group, ") slope est = ", round(slope, 2))) |>
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ lbl, ncol = 3) +
+  lims(x = c(-1, 1), y = c(-2, 4))
+```
+
+## X variation decreases standard error {visibility="uncounted"}
+
+Data simulated from regression equation $Y_i = 1 + 2 X_i + \epsilon_i$
+
+```{r sim_xvar_high}
+#| cache: true
+#| echo: false
+set.seed(33)
+n <- 50
+samples <- 9
+tibble(x = runif(samples * n, -1, 1),
+       y = 1 + 2 * x + runif(samples * n, -1, 1),
+       group = rep(1:samples, each = n)) |>
+  group_by(group) |>
+  mutate(slope = cov(x, y) / var(x)) |>
+  ungroup() |>
+  mutate(lbl = str_c("(", group, ") slope est = ", round(slope, 2))) |>
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ lbl, ncol = 3) +
+  lims(x = c(-1, 1), y = c(-2, 4))
+```
+
+## Calculating standard errors
+
+If observations are independent ...
+
+::: {.example}
+i.e., $Y_i$ above regression line doesn't predict whether $Y_j$ is above or below
+:::
+
+... can use the `lm()` default standard errors:
+
+```{r}
+fit_neighbors <- lm(y ~ treat, data = df_ggl)
+summary(fit_neighbors)
+```
+
+## Calculating standard errors
+
+To extract as a data frame:
+
+```{r}
+library("broom")
+tidy(fit_neighbors)
+```
+
+- [test statistic]{.alert}: coefficient divided by standard error
+- [p value]{.alert}: probability of seeing a slope this large in a sample of this size if population slope were 0
+  - Will be 0.05 (5%) or less if |test statistic| ≥ 2
+  
+## Calculating confidence intervals
+
+For 95% of samples, the [confidence interval]{.alert} $\hat{\beta} \pm 2 \se[\hat{\beta}]$ contains the population slope
+
+```{r}
+tidy(fit_neighbors) |>
+  mutate(lower = estimate - 2 * std.error, upper = estimate + 2 * std.error)
+```
+
+For confidence level of z%, use `qnorm(0.5 * (1 + z))` in place of 2:
+
+```{r}
+## 99% confidence
+qnorm(0.5 * (1 + 0.99))
+```
+
+## Inference with multiple treatment groups {#fit_all}
+
+```{r}
+fit_all <- lm(y ~ treatment, data = df_ggl)
+tidy(fit_all)
+```
+
+- One group will always be omitted from the regression
+  - Here, it's the "Civic" treatment
+- Intercept = average outcome among omitted group
+- Each slope = difference relative to omitted group
+  - e.g., Neighbors increases turnout by 6.34% compared to Civic
+- p value = probability of difference this big if 0 in population
+
+## Inference with multiple treatment groups {#fit_all_vs_hawthorne}
+
+By default, R omits the first category in alphabetical order.  To change that...
+
+```{r}
+## Use fct_relevel() to tell R which category to put first
+df_ggl <- df_ggl |>
+  mutate(treatment = fct_relevel(treatment, "Hawthorne"))
+
+## Rerun regression on modified data
+fit_all_vs_hawthorne <- lm(y ~ treatment, data = df_ggl)
+tidy(fit_all_vs_hawthorne)
+```
+
+## A general warning
+
+Statistically significant regression $\neq$ Existence of causal effect
+
+. . .
+
+[**Whether you can interpret a regression coefficient as a causal effect depends on the [design]{.underline} of your study, not whether the coefficient is statistically significant.**]{.fg style="--col: blue"}
+
+. . .
+
+- Causal inference comes from random treatment assignment
+  - ...or a close-enough approximation thereof
+- SEs/significance just tell you how precise your measurement is
+- These are largely a measure of sample size
+  - With a big enough sample, significance virtually guaranteed
+
+
+# Dealing with spillovers
+
+## Samples can be smaller than they appear
+
+Imagine study A, with $N = 1000$ data points
+
+- Whether each person $i = 1, \ldots, 1000$ voted in the 2024 general election
+
+. . .
+
+...versus study B, with $N = 3000$ data points
+
+- Whether each person $i = 1, \ldots, 1000$ voted for president in 2024
+- Whether each person $i = 1, \ldots, 1000$ voted for US Senate in 2024
+- Whether each person $i = 1, \ldots, 1000$ voted for US House in 2024
+
+. . .
+
+Does study B [really]{.underline} have 3x as much data as study A?
+
+## Independence and true sample size
+
+The issue with study B:
+
+- Voting in one race highly predictive of voting in others in same election
+- $i$'s presidential turnout isn't [independent]{.underline} of $i$'s Senate/House turnout
+
+. . .
+
+How do we correct for this?
+
+- For each observation $i$, identify:
+  - Which observations' outcomes may be partly predicted by knowing $Y_i$
+  - Which observations (hopefully many more) are not predicted by $Y_i$
+  
+- Instruct our statistical software to take these [clusters]{.alert} into account
+  - Will generally result in larger standard errors and p-values
+  - Greater within-cluster correlations $\leadsto$ bigger corrections needed
+  
+## Clusters in the turnout study
+
+Potential independence violation in GGL: voters in same household
+
+One household member votes $\leadsto$ Others likelier-than-average to vote
+
+```{r}
+#| echo: false
+set.seed(27)
+```
+
+:::: {.columns}
+::: {.column width="50%" .fragment}
+```{r}
+## Within actual households
+df_ggl |>
+  filter(hh_size == 2, treatment == "Control") |>
+  group_by(hh_id) |>
+  summarize(n_votes = sum(y)) |>
+  count(n_votes) |>
+  mutate(prop = n / sum(n))
+```
+:::
+::: {.column width="50%" .fragment}
+```{r}
+## Shuffling voters into fake households
+df_ggl |>
+  filter(hh_size == 2, treatment == "Control") |>
+  mutate(fake_hh_id = sample(hh_id)) |>
+  group_by(fake_hh_id) |>
+  summarize(n_votes = sum(y)) |>
+  count(n_votes) |>
+  mutate(prop = n / sum(n))
+```
+:::
+::::
+
+## Correcting standard errors for clustering
+
+- Install + load the `fixest` package
+- Use `feols()` in place of `lm()` [[Original results]{.button}](#fit_all_vs_hawthorne)
+- All else same as before, now just accounting for non-independence
+
+```{r}
+library("fixest")
+fit_all_clus <- feols(y ~ treatment,
+                      vcov = ~ hh_id,
+                      data = df_ggl)
+tidy(fit_all_clus)
+```
+
+
+# Wrapping up
+
+## What we did today
+
+1. Influences on standard errors of the treatment effect estimate
+   - More unpredictable outcome $\leadsto$ Higher SEs
+   - More variation in treatment values $\leadsto$ Lower SEs
+   - Larger sample size $\leadsto$ Lower SEs
+   
+2. Other important inferential statistics
+   - Confidence interval: Will contain population value in specified proportion of samples
+   - p-value: Chance of seeing this big an effect in sample if none in population
+   
+2. Calculating inferential statistics in R
+   - `tidy()` to extract table of estimates, SEs, p-values
+   - Confidence interval: estimate $\pm$ 2se
+   - `feols()` when there is clustering of observations
+
+
+## To do for next week
+
+Next week's topic --- [Matching]{.alert}
+
+1. Read research paper "MPs for Sale?" by Eggers and Hainmueller
+
+2. Read *Mastering 'Metrics*, chapter 2, pages 47--55
+
+3. Read "Matching Methods for Causal Inference" by Stuart
+
+4. Work on [Problem Set 2]{.alert} due Tues 2/11
