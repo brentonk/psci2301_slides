@@ -1,0 +1,434 @@
+---
+title: Matching
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method: mathjax
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-02-11
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("06_01_matching/06_01_matching.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+\newcommand{\ub}[2]{\underbrace{#1}_{\mathclap{\text{#2}}}}
+
+
+## Today's agenda
+
+1. Motivating question: Does holding office increase wealth?
+
+2. Covariates and conditional independence
+
+3. Estimating treatment effects by matching
+
+
+# Motivating question: Political office and personal wealth
+
+## Does holding political office increase wealth?
+
+**Population:** British candidates for Parliament elected 1950--1970
+
+::: {.example}
+So this doesn't answer whether election would make a regular Briton richer
+:::
+
+**Outcome:** Total wealth at death
+
+**Treatment:** Being elected to Parliament
+
+**Comparison:** Not being elected to Parliament
+
+Correlational evidence suggests positive effect, esp. for Conservatives
+
+## Correlational evidence
+
+![](eh_outcomes.png)
+
+## Problems for causal inference
+
+Election is not a randomly assigned treatment
+
+Those elected probably aren't representative of all candidates
+
+. . .
+
+```{r dag}
+#| echo: false
+#| cache: true
+library("ggdag")
+set.seed(53)
+dagify(election ~ quality,
+       wealth ~ quality,
+       wealth ~ election,
+       labels = c(
+         "quality" = "Quality",
+         "election" = "Election",
+         "wealth" = "Wealth"
+       ),
+       latent = "quality",
+       exposure = "election",
+       outcome = "wealth") |>
+  ggdag(text = FALSE, use_labels = "label", text_size = 7, stylized = TRUE) +
+  theme_void()
+```
+
+
+## Lots of confounding variables
+
+![](eh_balance.png)
+
+
+# Covariates and conditional independence
+
+## A confounding variable
+
+Imagine every MP fell into one of two categories...
+
+:::: {.columns}
+::: {.column width="50%" .fragment}
+<center>
+![](benn.jpg){width="70%"}  
+*"Dashing"* (Tony Benn)
+</center>
+:::
+::: {.column width="50%" .fragment}
+<center>
+![](brown.jpg){width="70%"}  
+*"Plain"* (George Brown)
+</center>
+:::
+::::
+
+## Dashing and plain MPs
+
+Confounding variable affects [assignment to treatment]{.alert}
+
+- Assume candidate population is split evenly between dashing and plain
+- ...but 80% of dashing ones are elected, versus 20% of plains
+
+. . .
+
+Confounding variable also affects [potential outcomes]{.alert}
+
+- Assume election raises wealth by £100k for all candidates
+- ...but baseline wealth of dashing candidates is £200k higher
+
+. . .
+
+If we just compare elected to not-elected, will we get the right answer?
+
+```{r sim}
+#| echo: false
+#| cache: true
+set.seed(14)
+n <- 500
+y_0_plain <- rnorm(n, mean = 300, sd = 100)
+y_0_dashing <- 200 + sample(y_0_plain)
+elected_plain <- sample(c("yes", "no"), n, replace = TRUE, prob = c(0.2, 0.8))
+elected_dashing <- sample(c("yes", "no"), n, replace = TRUE, prob = c(0.8, 0.2))
+df_sim <-
+  tibble(id = 1:(2*n),
+         type = rep(c("plain", "dashing"), each = n),
+         y_0 = c(y_0_plain, y_0_dashing),
+         y_1 = y_0 + 100,
+         elected = c(elected_plain, elected_dashing))
+df_sim_mps <- df_sim |>
+  pivot_longer(cols = c(y_0, y_1),
+               names_to = "potential_outcome",
+               values_to = "wealth") |>
+  mutate(observed = case_when(
+           elected == "yes" & potential_outcome == "y_1" ~ "yes",
+           elected == "no" & potential_outcome == "y_0" ~ "yes",
+           TRUE ~ "no"))
+df_sim_mps <- slice_sample(df_sim_mps, n = nrow(df_sim_mps))
+avg_0 <- with(df_sim_mps, mean(wealth[potential_outcome == "y_0"]))
+avg_1 <- with(df_sim_mps, mean(wealth[potential_outcome == "y_1"]))
+avg_0_obs <- with(df_sim_mps, mean(wealth[potential_outcome == "y_0" & observed == "yes"]))
+avg_1_obs <- with(df_sim_mps, mean(wealth[potential_outcome == "y_1" & observed == "yes"]))
+```
+
+## Hypothetical MP data
+
+```{r}
+#| echo: false
+#| dependson: sim
+#| cache: true
+set.seed(222)
+df_sim_mps |>
+  ggplot(aes(x = potential_outcome, y = wealth)) +
+  geom_point(aes(color = type, shape = type),
+             position = position_jitter(width = 0.2),
+             alpha = 0.7) +
+  scale_y_continuous(breaks = seq(0, 1000, by = 100))
+```
+
+## Hypothetical MP data {visibility="uncounted"}
+
+```{r}
+#| echo: false
+#| dependson: sim
+#| cache: true
+set.seed(222)
+df_sim_mps |>
+  ggplot(aes(x = potential_outcome, y = wealth)) +
+  geom_point(aes(color = type, shape = type),
+             position = position_jitter(width = 0.2),
+             alpha = 0.7) +
+  annotate("errorbar", x = "y_0", ymin = avg_0, ymax = avg_0, width = 0.5, size = 2) +
+  annotate("errorbar", x = "y_1", ymin = avg_1, ymax = avg_1, width = 0.5, size = 2) +
+  scale_y_continuous(breaks = seq(0, 1000, by = 100))
+```
+
+## Hypothetical MP data {visibility="uncounted"}
+
+```{r}
+#| echo: false
+#| dependson: sim
+#| cache: true
+set.seed(222)
+df_sim_mps |>
+  ggplot(aes(x = potential_outcome, y = wealth)) +
+  geom_point(aes(color = type, shape = type, alpha = observed),
+             position = position_jitter(width = 0.2)) +
+  annotate("errorbar", x = "y_0", ymin = avg_0, ymax = avg_0, width = 0.5, size = 2, alpha = 0.2) +
+  annotate("errorbar", x = "y_1", ymin = avg_1, ymax = avg_1, width = 0.5, size = 2, alpha = 0.2) +
+  scale_alpha_manual(values = c("yes" = 0.7, "no" = 0.1)) +
+  scale_y_continuous(breaks = seq(0, 1000, by = 100))
+```
+
+## Hypothetical MP data {visibility="uncounted"}
+
+```{r}
+#| echo: false
+#| dependson: sim
+#| cache: true
+set.seed(222)
+df_sim_mps |>
+  ggplot(aes(x = potential_outcome, y = wealth)) +
+  geom_point(aes(color = type, shape = type, alpha = observed),
+             position = position_jitter(width = 0.2)) +
+  annotate("errorbar", x = "y_0", ymin = avg_0, ymax = avg_0, width = 0.5, size = 2, alpha = 0.2) +
+  annotate("errorbar", x = "y_1", ymin = avg_1, ymax = avg_1, width = 0.5, size = 2, alpha = 0.2) +
+  annotate("errorbar", x = "y_0", ymin = avg_0_obs, ymax = avg_0_obs, width = 0.5, size = 2) +
+  annotate("errorbar", x = "y_1", ymin = avg_1_obs, ymax = avg_1_obs, width = 0.5, size = 2) +
+  scale_alpha_manual(values = c("yes" = 0.7, "no" = 0.1)) +
+  scale_y_continuous(breaks = seq(0, 1000, by = 100))
+```
+
+## Confounding and independence failure
+
+Independence condition: $\C[Y_{1i}, D_i] = 0$, $\C[Y_{0i}, D_i] = 0$
+
+. . .
+
+If independence holds:
+\begin{align}
+\E[Y_{1i} \mid D_i = 1] &= \E[Y_{1i}] \\
+\E[Y_{0i} \mid D_i = 0] &= \E[Y_{0i}]
+\end{align}
+
+. . . 
+
+But because dashingness $\leadsto$ election chances, we don't have that here
+\begin{align}
+\E[Y_{1i}] &= \tfrac{1}{2} \E[Y_{1i} \mid \text{dashing}] + \tfrac{1}{2} \E[Y_{1i} \mid \text{plain}] \\[0.4em]
+\E[Y_{1i} \mid D_i = 1] &= \textcolor{blue}{\tfrac{3}{4}} \E[Y_{1i} \mid \text{dashing}] + \textcolor{blue}{\tfrac{1}{4}} \E[Y_{1i} \mid \text{plain}]
+\end{align}
+
+## Analyzing within subgroups
+
+```{r}
+#| echo: false
+#| dependson: sim
+#| cache: true
+set.seed(222)
+df_sim_mps |>
+  filter(observed == "yes") |>
+  ggplot(aes(x = potential_outcome, y = wealth)) +
+  geom_point(aes(color = type, shape = type),
+             position = position_jitter(width = 0.2)) +
+  scale_y_continuous(breaks = seq(0, 1000, by = 100))
+```
+
+## Analyzing within subgroups {visibility="uncounted"}
+
+```{r}
+#| echo: false
+#| dependson: sim
+#| cache: true
+set.seed(222)
+df_sim_means <- df_sim_mps |>
+  filter(observed == "yes") |>
+  group_by(type, potential_outcome) |>
+  summarize(avg = mean(wealth))
+df_sim_mps |>
+  filter(observed == "yes") |>
+  ggplot(aes(x = potential_outcome, y = wealth)) +
+  geom_point(aes(color = type, shape = type),
+             position = position_jitter(width = 0.2)) +
+  facet_wrap(~ type, ncol = 2) +
+  scale_y_continuous(breaks = seq(0, 1000, by = 100))
+```
+
+## Analyzing within subgroups {visibility="uncounted"}
+
+```{r}
+#| echo: false
+#| dependson: sim
+#| cache: true
+set.seed(222)
+df_sim_means <- df_sim_mps |>
+  filter(observed == "yes") |>
+  group_by(type, potential_outcome) |>
+  summarize(avg = mean(wealth))
+df_sim_mps |>
+  filter(observed == "yes") |>
+  ggplot(aes(x = potential_outcome, y = wealth)) +
+  geom_point(aes(color = type, shape = type),
+             position = position_jitter(width = 0.2)) +
+  geom_errorbar(data = df_sim_means,
+                aes(y = avg, ymin = avg, ymax = avg),
+                width = 0.5, size = 2) +
+  facet_wrap(~ type, ncol = 2) +
+  scale_y_continuous(breaks = seq(0, 1000, by = 100))
+```
+
+## Conditional independence
+
+::: {.callout-note}
+## The conditional independence condition
+Let $X_i$ be an observable variable (or collection of variables).
+Treatment assignment and potential outcomes are [conditionally independent given $X_i$]{.alert} if
+\begin{align}
+\C[Y_{1i}, D_i \mid X_i = x] &= 0, \\
+\C[Y_{0i}, D_i \mid X_i = x] &= 0
+\end{align}
+for every possible variable value $x$.
+:::
+
+. . .
+
+Interpretation:
+
+- Treatment assignment at random [within subgroups]{.underline} defined by $X_i$ values
+- OK if $X_i$ affects treatment assignment
+- OK if other vars affect potential outcomes, but not treatment assignment
+- Not OK if there are [unobserved confounders]{.alert}
+
+## Estimation under conditional independence
+
+::: {.callout-tip}
+## Law of iterated expectation
+Suppose $X_i$ has $M$ possible values $x_1, \ldots, x_M$
+The population mean of any variable $Z_i$ is a weighted average of means within subgroups defined by values of $X_i$:
+$$
+\E[Z_i] = \sum_{m=1}^M \ub{\E[Z_i \mid X_i = x_m]}{subgroup avg} \cdot \ub{\Pr(X_i = x_m)}{subgroup size}
+$$
+:::
+
+Suggests how to estimate avg effects if conditional independence holds:
+
+- Calculate $\avg[Y_i \mid D_i = 1, X_i = x] - \avg[Y_i \mid D_i = 0, X_i = x]$ within each subgroup
+- Take weighted average, weighting by proportion of obs in each group
+
+## Estimation under conditional independence
+
+```{r}
+#| echo: false
+df_sim <- df_sim |>
+  mutate(wealth = if_else(elected == "yes", y_1, y_0)) |>
+  select(id, type, elected, wealth)
+```
+
+```{r}
+#| output-location: column
+df_sim_agg <- df_sim |>
+  group_by(type) |>
+  summarize(
+    n = n(),
+    avg_treat = mean(wealth[elected == "yes"]),
+    avg_control = mean(wealth[elected == "no"]),
+    diff = avg_treat - avg_control
+  )
+df_sim_agg
+```
+
+```{r}
+#| output-location: column
+df_sim_agg |>
+  summarize(ate = weighted.mean(diff, n))
+```
+
+## The curse of dimensionality
+
+In reality, being dashing versus plain isn't only confounding variable
+
+[Curse of dimensionality:]{.alert} Number of subgroups grows exponentially
+
+. . .
+
+```{r}
+#| echo: false
+tibble(number_of_covariates = 1:20,
+       number_of_subgroups = 2^number_of_covariates) |>
+  ggplot(aes(x = number_of_covariates, y = number_of_subgroups)) +
+  geom_point() +
+  ggtitle("Number of subgroups if all variables are binary")
+```
+
+## Solving the curse of dimensionality
+
+Many confounders $\leadsto$ can't take averages within subgroups
+
+- Very small samples within each group $\leadsto$ high standard errors
+- Many subgroups won't have both control and treatment
+
+. . .
+
+[Matching]{.alert} estimators solve this by finding closest matches
+
+Loose idea --- Pair each treated obs with the control obs with closest $X_i$
+
+- Idea is to make treatment and control groups as balanced as possible
+- Measures of "closest" differ
+- Some control obs will not end up being used for estimation!
+
+# Wrapping up
+
+## What we did today
+
+1. Looked at the question of how officeholding affects wealth
+2. Few confounders $\leadsto$ Weighted average across subgroups
+3. Many confounders $\leadsto$ Matching
+
+Next time:
+
+- More details on matching
+- Work through Eggers & Hainmueller ourselves

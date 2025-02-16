@@ -8,3 +8,6 @@
 # Other junk files
 .DS_Store
 *.Rhistory
+
+# VSCode
+*.code-workspace

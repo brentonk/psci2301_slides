@@ -1,0 +1,453 @@
+---
+title: Matching in practice
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method: mathjax
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-02-17
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("06_02_matching_practice/06_02_matching_practice.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+\newcommand{\ub}[2]{\underbrace{#1}_{\mathclap{\text{#2}}}}
+
+
+## Recap
+
+1.  Confounding variables
+    - Affects outcome of interest *and* assignment to treatment
+    - Presence of confounding $\leadsto$ independence condition fails
+2.  Controlling for confounders
+    - Compare observations that are similar except for treatment status
+    - Kills selection bias if all confounders are observed
+3.  The subclassification estimator
+    - Divide observations into subgroups based on confounder values
+    - Weighted average of within-subgroup differences
+
+## Today's agenda
+
+1. Work through philosophy of matching with many confounders
+2. See how to implement matching methods in R
+3. Briefly discuss Eggers & Hainmueller results
+
+# Controlling for many confounders
+
+## Recap on subclassification
+
+Can use [subclassification]{.alert} when there aren't many confounders
+
+1. Divide observations into groups based on confounder values
+2. Take difference of means within each subgroup: $$\avg[Y_i \mid D_i = 1, X_i = x] - \avg[Y_i \mid D_i = 0, X_i = x]$$
+3. Estimate ATE by weighted average of within-subgroup differences
+
+. . .
+
+Runs into [curse of dimensionality]{.alert} with many confounders
+
+- Too few observations per group to accurately estimate differences
+- Many groups won't have both treatment + control observations
+
+## Matching
+
+Typical algorithm:
+
+::: {.incremental}
+1. For each treatment ($D_i = 1$) observation, find the control ($D_i = 0$) observation with the closest confounder values
+   - How to define "closest"?  Stay tuned!
+
+2. Create a comparison group from the set of matched observations
+
+3. Take average difference in outcome between treatment group and matched controls
+:::
+
+## ATT versus ATE
+
+Up to now we've focused on estimating the ATE, $\E[Y_{1i} - Y_{0i}]$
+
+::: {.example}
+Difference in potential outcomes for the average population member
+:::
+
+. . .
+
+Typical matching methods instead estimate the [average treatment effect on the treated]{.alert}, or ATT: $$\E[Y_{1i} - Y_{0i} \mid D_i = 1]$$
+
+::: {.example}
+Difference in potential outcomes for the average population member [who would receive the treatment]{.underline}
+:::
+
+. . .
+
+Randomly assigned treatment $\leadsto$ ATE $\approx$ ATT
+
+Self selection $\leadsto$ ATE $\not\approx$ ATT (except in special situations)
+
+## ATT versus ATE
+
+Hypothetical example: Matching on candidate age
+
+```{r sim_cands}
+#| echo: false
+#| cache: true
+set.seed(47)
+df_sim_cands <-
+  tibble(id = 1:300,
+         type = sample(c("elected", "not elected"),
+                       size = max(id),
+                       replace = TRUE,
+                       prob = c(1, 2)),
+         age = rnorm(max(id),
+                     mean = if_else(type == "elected", 60, 52),
+                     sd = if_else(type == "elected", 8, 10)))
+```
+
+```{r}
+#| echo: false
+#| cache: true
+#| dependson: sim_cands
+df_sim_cands |>
+  ggplot(aes(x = age)) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~ type, ncol = 1, scales = "free_y") +
+  ggtitle("Distributions before matching") +
+  scale_x_continuous(limits = c(20, 100))
+```
+
+## ATT versus ATE
+
+Hypothetical example: Matching on candidate age
+
+```{r}
+#| echo: false
+#| cache: true
+#| dependson: sim_cands
+df_cands_elected <- df_sim_cands |>
+  filter(type == "elected")
+df_cands_elected$match <- NA
+for (i in 1:nrow(df_cands_elected)) {
+  df_cands_elected$match[i] <-
+    df_sim_cands |>
+    mutate(diff = abs(age - df_cands_elected$age[i])) |>
+    filter(type == "not elected") |>
+    slice_min(order_by = diff, n = 1) |>
+    pull(id)
+}
+df_cands_notelec <- df_sim_cands |>
+  slice(df_cands_elected$match)
+bind_rows(df_cands_elected |> select(-match),
+          df_cands_notelec) |>
+  ggplot(aes(x = age)) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~ type, ncol = 1, scales = "free_y") +
+  ggtitle("Distributions after matching") +
+  scale_x_continuous(limits = c(20, 100))
+```
+
+## Measuring closeness
+
+Which control observation is the best match for the treated one?
+
+ 
+
+|                    | Treated | Control 1 | Control 2 |
+| :----------------- | :------ | :-------- | :-------- |
+| Female             | 1       | 1         | 0         |
+| Years of education | 14      | 12        | 14        |
+| Aristocrat         | 0       | 1         | 0         |
+| Year of birth      | 1928    | 1946      | 1931      |
+| Year of death      | 2003    | 2005      | 1989      |
+
+: {tbl-colwidths="[25, 15, 15, 15]"}
+
+## Distance between observations
+
+Could just sum up component-by-component differences
+
+. . .
+
+Treated distance to Control 1: $$|1 - 1| + |14 - 12| + |0 - 1| + |1928 - 1946| + |2003 - 2005| = 23$$
+
+. . .
+
+Treated distance to Control 2: $$|1 - 0| + |14 - 14| + |0 - 0| + |1928 - 1931| + |2003 - 1989| = 18$$
+
+. . .
+
+Do you see a problem with doing it this way?
+
+## The Mahalanobis distance
+
+Variables might be measured on very different scales
+
+Even when units are the same, normal variation might differ
+
+::: {.example}
+4-year diff in education means more than 4-year diff in birth year
+:::
+
+To correct for this, [Mahalanobis distance]{.alert} normalizes by standard deviations
+
+::: {.callout-note .fragment}
+## The Mahalanobis distance
+When the confounding variables $X_{1i}, \ldots, X_{Ki}$ are uncorrelated with each other, the Mahalanobis distance between two observations is $$d(X_i, X_j) = \sqrt{\frac{(X_{1i} - X_{1j})^2}{\sd[X_1]^2} + \cdots + \frac{(X_{Ki} - X_{Kj})^2}{\sd[X_K]^2}}.$$
+:::
+
+## Propensity score
+
+Other most common way to match observations with many confounders
+
+1. Create statistical model of selection into treatment
+   - e.g., logistic regression
+2. Using model, calculate the [propensity scores]{.alert} $\Pr(D_i = 1 \mid X_i)$
+3. Match observations with closest propensity scores
+
+. . .
+
+Advantage: Easier to find close matches than with Mahalanobis distance
+
+Disadvantage: Everything hinges on having a good propensity model
+
+- Can be especially challenging with many confounders/few observations
+- ... exactly the circumstances when you most need matching!
+
+## Don't match on post-treatment variables
+
+Whether using subclassification, Mahalanobis distance, or propensity scores...
+
+[Never]{.underline} control for [post-treatment variables]{.alert} whose value may be affected by treatment assignment
+
+. . .
+
+::: {.callout-note}
+## Matching on a post-treatment variable: Lung tar
+Imagine you want to study the effects of smoking on lung cancer.
+
+For each patient in your study, you have a measure of the amount of tar in their lungs.
+
+Why will your study be [less]{.underline} accurate if you control for this?
+:::
+
+
+# Matching in R
+
+## Why we're not using the MPs data
+
+Public data just contains the raw bios, not the outcome or confounders
+
+```{r eggers_data}
+#| cache: true
+library("archive")
+df_eh <-
+  archive_read("https://andy.egge.rs/data/THC_candidates.csv.zip",
+               file = "THC_candidates.csv") |>
+  read_csv()
+print(df_eh)
+```
+
+## Gilligan & Sergenti data
+
+```{r gs_data}
+#| echo: false
+#| cache: true 
+df_gs <- read_csv(here("data", "gilligan_sergenti.csv"))
+```
+
+```{r}
+df_gs
+```
+
+## Mahalanobis distance matching
+
+```{r}
+#| echo: false
+options(width = 45)
+```
+
+```{r match_md}
+#| output-location: column
+library("MatchIt")
+
+match_gs_md <- matchit(
+    intervention ~ ethfrac + ln_deaths + ln_wardur + ln_population +
+        ln_military + ln_gdppc + polity,
+    data = df_gs,
+    method = "nearest",
+    distance = "mahalanobis",
+    ratio = 1,
+    estimand = "ATT"
+)
+summary(match_gs_md)
+```
+
+## Propensity score step 1: Model treatment assignment
+
+```{r}
+#| echo: false
+options(width = 90) 
+```
+
+```{r}
+library("broom")
+fit_gs_prop <- glm(
+  intervention ~ ethfrac + ln_deaths + ln_wardur + ln_population +
+    ln_military + ln_gdppc + polity,
+  data = df_gs,
+  family = binomial()
+)
+tidy(fit_gs_prop)
+```
+
+## Propensity score step 2: Extract propensity scores
+
+```{r}
+df_gs$p_score <- predict(fit_gs_prop, type = "response")
+
+ggplot(df_gs, aes(x = p_score)) + geom_histogram(binwidth = 0.1) + facet_wrap(~ intervention)
+```
+
+## Propensity score step 3: Matching
+
+```{r}
+#| echo: false
+options(width = 45)
+```
+
+```{r}
+#| output-location: column
+match_gs_ps <- matchit(
+    intervention ~ ethfrac + ln_deaths + ln_wardur + ln_population +
+        ln_military + ln_gdppc + polity,
+    data = df_gs,
+    method = "nearest",
+    distance = df_gs$p_score,
+    ratio = 1,
+    estimand = "ATT"
+)
+summary(match_gs_ps)
+```
+
+## Estimating the ATT from matched samples
+
+```{r}
+#| output-location: column
+fit_unmatched <- lm(
+  ln_peace_duration ~ intervention,
+  data = df_gs
+) 
+tidy(fit_unmatched)
+```
+
+. . .
+
+```{r}
+#| output-location: column
+fit_md <- lm(
+  ln_peace_duration ~ intervention,
+  data = match.data(match_gs_md)
+) 
+tidy(fit_md)
+```
+
+. . .
+
+```{r}
+#| output-location: column
+fit_ps <- lm(
+  ln_peace_duration ~ intervention,
+  data = match.data(match_gs_ps)
+) 
+tidy(fit_ps)
+```
+
+
+# "MPs for Sale?": The results
+
+## Eggers & Hainmueller research design
+
+**Population:** British candidates for Parliament elected 1950--1970
+
+**Outcome:** Total wealth at death
+
+**Treatment:** Being elected to Parliament
+
+**Comparison:** Not being elected to Parliament
+
+**Controls:** Age, gender, aristocrat status, educational history, career history
+
+::: {.example}
+They match on these variables to estimate treatment effects
+:::
+
+## Eggers & Hainmueller results
+
+![](eh_table3.png){width=80% fig-align="center"}
+
+## Concerns about the matching strategy
+
+**Controls:** Age, gender, aristocrat status, educational history, career history
+
+These probably don't fully capture all sources of confounding bias
+
+. . .
+
+<br><hr>
+
+E&H follow-up analysis: [Regression discontinuity]{.alert} design
+
+Reduce unobserved confounding by comparing close winners to close losers
+
+Key assumption: In close elections, who wins is close to random
+
+
+# Wrapping up
+
+## What we did today
+
+1.  Matching methods with many confounders
+    - Mahalanobis distance --- variance-adjusted differences
+    - Propensity score matching --- match on likelihood of being treated
+    - Typically obtain ATT instead of ATE
+    - Don't control for post-treatment variables
+
+2.  Implementation with `MatchIt` in R
+
+3.  Eggers & Hainmueller results
+    - Officeholding appears lucrative, especially for Tories
+    - ...but lingering worries about unobserved confounding
+
+## Next time
+
+[Regression]{.alert} for treatment effect estimation with observed confounders
+
+1. Read Bartels research paper, "Beyond the Running Tally"
+2. Read *Mastering 'Metrics*, chapter 2, pages 56--81
+3. Remember that Problem Set 3 is due Friday
+4. Project proposals due at end of the month --- find data!

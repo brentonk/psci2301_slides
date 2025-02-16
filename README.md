@@ -6,7 +6,7 @@ All slides are written in Quarto using [my fork](https://github.com/brentonk/qua
 # Contents
 
 | Title                             | Date       | PDF export                                                              | Quarto source                                                           |
-|-----------------------------------|------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------|
+| --------------------------------- | ---------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | Introduction to the course        | 2025-01-06 | [PDF](/01_01_course_intro/01_01_course_intro.pdf)                       | [QMD](/01_01_course_intro/01_01_course_intro.qmd)                       |
 | Refresher on R essentials         | 2025-01-08 | [PDF](/01_02_r_refresher/01_02_r_refresher.pdf)                         | [QMD](/01_02_r_refresher/01_02_r_refresher.qmd)                         |
 | Asking causal questions           | 2025-01-13 | [PDF](/02_01_asking_causal_questions/02_01_asking_causal_questions.pdf) | [QMD](/02_01_asking_causal_questions/02_01_asking_causal_questions.qmd) |
@@ -15,4 +15,6 @@ All slides are written in Quarto using [my fork](https://github.com/brentonk/qua
 | Randomized experiments            | 2025-01-27 | [PDF](/04_01_randomization/04_01_randomization.pdf)                     | [QMD](/04_01_randomization/04_01_randomization.qmd)                     |
 | The turnout experiment            | 2025-01-29 | [PDF](/04_02_ggl2008/04_02_ggl2008.pdf)                                 | [QMD](/04_02_ggl2008/04_02_ggl2008.qmd)                                 |
 | Statistical inference in theory   | 2025-02-03 | [PDF](/05_01_inference_theory/05_01_inference_theory.pdf)               | [QMD](/05_01_inference_theory/05_01_inference_theory.qmd)               |
-| Statistical inference in practice | 2025-02-05 | [PDF](/05_02_inference_practice/05_02_inference_practice.pdf)               | [QMD](/05_02_inference_practice/05_02_inference_practice.qmd)               |
+| Statistical inference in practice | 2025-02-05 | [PDF](/05_02_inference_practice/05_02_inference_practice.pdf)           | [QMD](/05_02_inference_practice/05_02_inference_practice.qmd)           |
+| Matching                          | 2025-02-11 | [PDF](/06_01_matching/06_01_matching.pdf)                               | [QMD](/06_01_matching/06_01_matching.qmd)                               |
+| Matching in practice              | 2025-02-17 | [PDF](/06_02_matching_practice/06_02_matching_practice.pdf)             | [QMD](/06_02_matching_practice/06_02_matching_practice.qmd)             |
