@@ -18,3 +18,4 @@ All slides are written in Quarto using [my fork](https://github.com/brentonk/qua
 | Statistical inference in practice | 2025-02-05 | [PDF](/05_02_inference_practice/05_02_inference_practice.pdf)           | [QMD](/05_02_inference_practice/05_02_inference_practice.qmd)           |
 | Matching                          | 2025-02-11 | [PDF](/06_01_matching/06_01_matching.pdf)                               | [QMD](/06_01_matching/06_01_matching.qmd)                               |
 | Matching in practice              | 2025-02-17 | [PDF](/06_02_matching_practice/06_02_matching_practice.pdf)             | [QMD](/06_02_matching_practice/06_02_matching_practice.qmd)             |
+| Regression for causal inference   | 2025-02-24 | [PDF](/07_01_regression_theory/07_01_regression_theory.pdf)             | [QMD](/07_01_regression_theory/07_01_regression_theory.qmd)             |

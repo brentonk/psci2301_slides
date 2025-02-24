@@ -1,0 +1,485 @@
+---
+title: Regression for causal inference
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method: mathjax
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-02-24
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("07_01_regression_theory/07_01_regression_theory.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+library("broom")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+\newcommand{\ub}[2]{\underbrace{#1}_{\mathclap{\text{#2}}}}
+\newcommand{\ob}[2]{\overbrace{#1}^{\mathclap{\text{#2}}}}
+
+## Recap
+
+Last week --- [matching]{.alert} in theory and in practice
+
+- How to make causal inferences with observational data?
+  - Measure and control for confounding variables
+  - Ideal: compare obs that are same in all ways except treatment
+- Subclassification
+  - Divide observations into subgroups based on confounder values
+  - Weighted mean of differences within subgroups
+  - Runs into curse of dimensionality w/ many covariates
+- Other matching estimators
+  - Mahalanobis distance
+  - Propensity scores
+
+## Today's agenda
+
+Using controlled [regression]{.alert} to estimate average treatment effects
+
+1. Reasons to include controls in a regression
+   - Reduce standard errors by better isolating treatment effect
+   - Contend with selection bias, similar to matching
+2. Interpreting regression output
+   - How the treatment effect is calculated when controls are present
+   - Special considerations for a logged outcome variable
+   - How to interpret coefficients on controls (spoiler: don't try)
+
+
+# Regression with controls
+
+## Bivariate regression: What we already know
+
+Linear regression with a single covariate:
+$$
+\E[Y_i \mid X_i = x] = \ub{\alpha}{intercept} + \ub{\beta}{slope} \cdot x
+$$
+
+. . .
+
+Formula for slope estimate:
+$$
+\hat{\beta} = \frac{\cov[X_i, Y_i]}{\var[X_i]}
+$$
+
+. . .
+
+If $X_i$ is binary, then $\hat{\beta} = \avg[Y_i \mid X_i = 1] - \avg[Y_i \mid X_i = 0]$
+
+## Regression with multiple covariates
+
+Say we have $K$ covariates, $X_{i1}, X_{i2}, \ldots, X_{iK}$
+
+. . .
+
+Linear regression model with many covariates:
+\begin{align}
+\E[Y_i \mid X_{i1} = x_1, \ldots, X_{iK} = x_K]
+&= \alpha + \beta_1 x_1 + \cdots + \beta_K x_K \\
+&= \alpha + \sum_{k=1}^K \beta_k x_k.
+\end{align}
+
+. . .
+
+$\beta_k$ = change in predicted $Y_i$ due to increasing $X_{ik}$ by one unit, *holding all other covariates fixed*
+
+::: {.example}
+Can only be interpreted as a causal effect under special circumstances --- more on this to come
+:::
+
+## Why include more variables?
+
+Assume your goal is to estimate the avg treatment effect of $D_i$:
+$$
+\E[Y_i \mid D_i, X_i] = \ub{\alpha}{intercept} + \ob{\tau D_i}{ATE} + \ub{\sum_{k=1}^K \beta_k X_{ik}}{controls}.
+$$
+
+What is the point of including the controls?
+
+1. Variance reduction
+   - Isolate the effect of treatment more cleanly
+   - Beneficial for both randomized experiments and observational data
+2. Control selection bias --- akin to matching
+
+## Controls for variance reduction
+
+Hypothetical example: news watching experiment
+
+Outcome mainly dependent on age, but treatment has a small effect
+
+```{r}
+#| echo: false
+set.seed(212)
+n <- 50
+df_fox <- tibble(
+  treat = rep(0:1, each = n),
+  ftreat = factor(
+    treat,
+    levels = 0:1,
+    labels = c("local news", "fox news")
+  ),
+  age = runif(2 * n, 20, 60),
+  e_y = -20 + 1.5 * age + 5 * treat,
+  y = e_y + rnorm(2 * n, mean = 0, sd = 5)
+)
+df_fox |>
+  ggplot(aes(x = age, color = ftreat)) +
+  geom_point(aes(y = y)) +
+  geom_line(aes(y = e_y)) +
+  labs(
+    x = "Age",
+    y = "Opinion toward Trump"
+  )
+```
+
+## Controls for variance reduction
+
+```{r}
+#| echo: false
+options(width = 45)
+```
+
+True ATE in simulation is $+5$ points
+
+```{r}
+#| output-location: column
+fit_no_controls <- lm(y ~ treat, data = df_fox)
+tidy(fit_no_controls)
+```
+
+```{r}
+#| output-location: column
+fit_controls <- lm(y ~ treat + age, data = df_fox)
+tidy(fit_controls)
+```
+
+Controlled regression gets closer + has much smaller std error
+
+## Controls for variance reduction
+
+Distribution of ATE estimates across 1000 simulated experiments
+
+```{r}
+#| echo: false
+#| cache: true
+set.seed(424)
+n_sim <- 1000
+ate_0 <- ate_1 <- rep(NA, n_sim)
+for (i in 1:n_sim) {
+  treat <- rep(0:1, each = n)
+  age <- runif(2 * n, 20, 60)
+  y <- -20 + 1.5 * age + 5 * treat + rnorm(2 * n, mean = 0, sd = 5)
+  ate_0[i] <- coef(lm(y ~ treat))["treat"]
+  ate_1[i] <- coef(lm(y ~ treat + age))["treat"]
+}
+df_sim <- tibble(ate_0, ate_1) |>
+  pivot_longer(everything(), names_to = "estimate") |>
+  mutate(estimate = factor(
+    estimate,
+    levels = c("ate_0", "ate_1"),
+    labels = c("without age control", "with age control")
+  ))
+df_sim_means <- df_sim |>
+  group_by(estimate) |>
+  summarize(avg = mean(value))
+ggplot(df_sim, aes(x = value)) +
+  geom_histogram(binwidth = 0.5) +
+  geom_vline(data = df_sim_means, aes(xintercept = avg), linetype = "dashed", size = 0.25) +
+  facet_wrap(~ estimate, ncol = 2)
+```
+
+## Controls to reduce selection bias
+
+Imagine similar data, but where Pr(treat) increases with age
+
+```{r}
+#| echo: false
+set.seed(441)
+n <- 50
+df_fox_obs <- tibble(
+  age = runif(2 * n, 20, 60),
+  treat = rbinom(2 * n, size = 1, prob = (age - 19) / (61 - 19)),
+  ftreat = factor(
+    treat,
+    levels = 0:1,
+    labels = c("local news", "fox news")
+  ),
+  e_y = -20 + 1.5 * age + 5 * treat,
+  y = e_y + rnorm(2 * n, mean = 0, sd = 5)
+)
+df_fox_obs |>
+  ggplot(aes(x = age, color = ftreat)) +
+  geom_point(aes(y = y)) +
+  geom_line(aes(y = e_y)) +
+  labs(
+    x = "Age",
+    y = "Opinion toward Trump"
+  )
+```
+
+## Controls to reduce selection bias
+
+With selection bias, the raw difference of means vastly overstates ATE
+
+```{r}
+#| echo: false
+df_obs_avg <- df_fox_obs |>
+  group_by(ftreat) |>
+  summarize(avg = mean(y))
+df_fox_obs |>
+  ggplot(aes(x = ftreat, y = y, color = ftreat)) +
+  geom_point(position = position_jitter(width = 0.1)) +
+  geom_errorbar(data = df_obs_avg,
+                aes(y = avg, ymin = avg, ymax = avg),
+                width = 0.5, size = 2) +
+  labs(
+    x = "Treatment group",
+    y = "Opinion toward Trump"
+  )
+```
+
+## Controls to reduce selection bias
+
+```{r}
+#| output-location: column
+fit_no_control <- lm(y ~ treat, data = df_fox_obs)
+tidy(fit_no_control)
+```
+
+```{r}
+#| output-location: column
+fit_control <- lm(y ~ treat + age, data = df_fox_obs)
+tidy(fit_control)
+```
+
+```{r}
+#| output-location: column
+df_fox_obs |>
+  mutate(age_group = ntile(age, 5)) |>
+  group_by(age_group) |>
+  summarize(diff = mean(y[treat == 1]) - mean(y[treat == 0]),
+            n = n()) |>
+  summarize(ate = weighted.mean(diff, n))
+```
+
+## Controls to reduce selection bias
+
+Distribution of ATE estimates across 1000 simulated experiments
+
+```{r}
+#| echo: false
+#| cache: true
+set.seed(418)
+n_sim <- 1000
+ate_0 <- ate_1 <- ate_s <- rep(NA, n_sim)
+for (i in 1:n_sim) {
+  age <- runif(2 * n, 20, 60)
+  treat <- rbinom(2 * n, size = 1, prob = (age - 19) / (61 - 19))
+  y <- -20 + 1.5 * age + 5 * treat + rnorm(2 * n, mean = 0, sd = 5)
+  ate_0[i] <- coef(lm(y ~ treat))["treat"]
+  ate_1[i] <- coef(lm(y ~ treat + age))["treat"]
+  ate_s[i] <- tibble(y, age, treat) |>
+    mutate(g = ntile(age, 5)) |>
+    group_by(g) |>
+    summarize(diff = mean(y[treat == 1]) - mean(y[treat == 0]), n = n()) |>
+    summarize(ate = weighted.mean(diff, n)) |>
+    pull(ate)
+}
+df_sim <- tibble(ate_0, ate_1, ate_s) |>
+  pivot_longer(everything(), names_to = "estimate") |>
+  mutate(estimate = factor(
+    estimate,
+    levels = c("ate_0", "ate_1", "ate_s"),
+    labels = c("lm w/o age control", "lm w/ age control", "subclassification")
+  ))
+df_sim_means <- df_sim |>
+  group_by(estimate) |>
+  summarize(avg = mean(value, na.rm = TRUE))
+ggplot(df_sim, aes(x = value)) +
+  geom_histogram(binwidth = 0.5) +
+  geom_vline(data = df_sim_means, aes(xintercept = avg), linetype = "dashed", size = 0.25) +
+  facet_wrap(~ estimate, ncol = 3)
+```
+
+## Comparison of treatment effect estimators
+
+:::: {.columns}
+::: {.column width="50%"}
+[Regression]{.underline}
+
+- Biased unless all confounders are measured and included
+- Always uses all the data
+- Lower standard errors *if* linear approximation is good
+- Biased if linear approx. is bad
+- Easier to use (IMO)
+:::
+::: {.column width="50%"}
+[Matching]{.underline}
+
+- Biased unless all confounders are measured and included
+- May throw away some data
+- Higher standard errors
+- Unbiased, no linearity needed
+- Harder to use --- lots of choices
+:::
+::::
+
+**My bottom line:** Best to use both, see if conclusions change much
+
+... but even better not to have to rely on measuring all confounders
+
+# Interpreting regression output
+
+## Recap: Gilligan & Sergenti data
+
+- Unit of observation: Conflict event
+
+- Outcome: Length of peace, `ln_peace_duration`
+
+- Treatment variable: UN intervention, `intervention`
+
+- Various country/conflict-level confounders
+
+```{r}
+#| echo: false
+df_gs <- read_csv(here("data", "gilligan_sergenti.csv"))
+options(width = 90)
+```
+
+```{r}
+df_gs
+```
+
+## Regression estimate of the intervention effect
+
+```{r}
+fit_gs <- lm(
+  ln_peace_duration ~ intervention + ln_deaths + ln_wardur + ln_population +
+    ln_military + ln_gdppc + polity,
+  data = df_gs
+)
+tidy(fit_gs)
+```
+
+## Calculating the controlled ATE
+
+$$
+\hat{\tau} = \frac{\cov[Y_i, D_i \mid X_{i1}, \ldots, X_{iK}]}{\var[D_i \mid X_{i1}, \ldots, X_{iK}]}
+$$
+
+```{r}
+# Variation in treatment assignment not explained by confounders:
+resid_treat <- residuals(
+  lm(intervention ~ ln_deaths + ln_wardur + ln_population + ln_military + ln_gdppc + polity,
+     data = df_gs))
+
+# Variation in outcome not explained by confounders:
+resid_y <- residuals(
+  lm(ln_peace_duration ~ ln_deaths + ln_wardur + ln_population + ln_military + ln_gdppc + polity,
+     data = df_gs))
+
+# Bivariate relationship between residuals
+cov(resid_y, resid_treat) / var(resid_treat)
+```
+
+## Interpreting regression with a logged outcome
+
+Remember: $\ln z = a$ equivalent to $z = e^a$, where $e \approx 2.718$
+
+. . .
+
+Important property of exponents: $e^{a + b} = e^a \cdot e^b$
+
+. . .
+
+Rewriting the regression model with a logged outcome
+
+$$
+\ln Y_i \approx \alpha + \tau D_i + \beta_1 X_{i1} + \cdots
+$$
+
+. . .
+
+$$
+Y_i \approx e^{\alpha + \tau D_i + \beta_1 X_{i1} + \cdots}
+$$
+
+. . .
+
+$$
+Y_i \approx \begin{cases}
+  e^{\alpha + \beta_1 X_{i1} + \cdots} & \text{if $D_i = 0$}, \\
+  e^\tau \cdot e^{\alpha + \beta_1 X_{i1} + \cdots} & \text{if $D_i = 1$}.
+\end{cases}
+$$
+
+. . .
+
+$\leadsto$ Interpret as a *proportional* difference in the outcome due to treatment
+
+## Interpreting regression with a logged outcome
+
+```{r}
+tidy(fit_gs) |> filter(term == "intervention")
+exp(0.821)
+```
+
+$\leadsto$ Expect peace to be 2.27x as long if UN intervenes, compared to if not
+
+. . .
+
+```{r}
+exp(0.821 + c(-2, 2) * 0.323)
+```
+
+$\leadsto$ Confidence interval: effect of 1.19x to 4.34x
+
+## Coefficients on control variables
+
+`lm()` spits out coefficients/p-values for the treatment *and* each confounder
+
+Best practice: **ignore** these for everything besides treatment variable
+
+- Can't interpret their coefficients causally
+  - Coefficients give "all else equal" comparisons
+  - ... but all else is not equal when the variable affects treatment!
+- High p-value does not mean the variable isn't a confounder
+
+# Wrapping up
+
+## What we did today
+
+1. Worked through reasons to include controls
+   - Variance reduction --- isolate the treatment effect
+   - Bias reduction --- kill selection bias induced by confounders
+2. Compared matching and regression
+   - Regression is more precise *if* relationships are close to linear
+   - Otherwise, matching is better at eliminating bias
+3. Dealt with practical issues in regression
+   - Proportional change interpretation w/ logged outcome
+   - Ignore the control coefficients!
+
+Next time: Estimating [heterogeneous effects]{.alert} with regression
