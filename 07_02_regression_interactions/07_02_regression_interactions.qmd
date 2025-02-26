@@ -1,0 +1,315 @@
+---
+title: Regression with interaction terms
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method: mathjax
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-02-26
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("07_02_regression_interactions/07_02_regression_interactions.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+library("broom")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+\newcommand{\ub}[2]{\underbrace{#1}_{\mathclap{\text{#2}}}}
+\newcommand{\ob}[2]{\overbrace{#1}^{\mathclap{\text{#2}}}}
+
+## Recap
+
+Last time --- regression for causal inference
+
+1. The linear model with controls
+   - Reduce standard errors by isolating treatment effect
+   - Control for selection bias
+
+2. Interpreting regression output
+   - "All else equal" comparison
+   - Don't try to interpret control variable coefficients
+
+## Today's agenda
+
+Regression with interaction terms
+
+1. Heterogeneous effects and why we might look for them
+2. Interaction with a categorical variable
+3. Interaction with a continuous variable
+   - Linear interaction approach
+   - Discretization approach
+
+
+# Heterogeneous effects and the interactive model
+
+## Heterogeneous effects: What they are, why we care
+
+We've mostly focused on overall average treatment effects
+
+Sometimes we suspect different average effects across subpopulations
+
+::: {.example}
+e.g., does social pressure affect turnout differently for men and women?
+:::
+
+. . .
+
+Reasons to look for these [heterogeneous effects]{.alert}
+
+- Theoretical
+  - Think about mechanisms --- why you expect treatment to be effective
+  - Would the mechanism be stronger/weaker for some groups?
+
+- Practical
+  - How can the treatment be targeted most effectively?
+  - e.g., can we get most of the votes for a fraction of the cost?
+
+## Heterogeneous effects in randomized experiments
+
+Potential outcomes $Y_{1i}, Y_{0i}$
+
+Treatment indicator $D_i$
+
+Binary group indicator $X_i$
+
+::: {.example}
+e.g., $X_i = 1$ for men, $X_i = 0$ for women
+:::
+
+. . .
+
+Overall average treatment effect $\E[Y_{1i} - Y_{0i}]$
+
+Average treatment effect among men $\E[Y_{1i} - Y_{0i} \mid X_i = 1]$
+
+Average treatment effect among women $\E[Y_{1i} - Y_{0i} \mid X_i = 0]$
+
+::: {.example}
+same subgroup effects we calculate for subclassification,
+now just treating them as interesting on their own
+:::
+
+## Capturing heterogeneous effects with a linear model
+
+Regression with an [interaction term]{.alert}:
+$$
+\E[Y_i \mid D_i, Z_i] = \alpha + \beta_1 D_i + \beta_2 X_i + \ub{\beta_3 (D_i \times X_i)}{interaction term}
+$$
+
+::: {.smaller .incremental}
+- $\alpha$: average outcome in control condition among $X_i = 0$ subgroup
+  - voter turnout among women who don't receive the GOTV mailer
+- $\beta_1$: average treatment effect in $X_i = 0$ subgroup
+  - average effect of mailer on turnout among women
+- $\beta_2$: difference in avg outcome in control cond. b/w $X_i = 1$ and $X_i = 0$
+  - among those w/ no mailer, how much more/less is men's turnout?
+- $\beta_3$ difference in ATE b/w $X_i = 1$ and $X_i = 0$
+  - how much more/less does mailer affect turnout among men?
+:::
+
+## Recap: The GGL turnout data
+
+```{r download}
+#| echo: false
+#| cache: true
+df_ggl <- read_csv("http://hdl.handle.net/10079/d3669799-4537-411e-b175-d9e837324c35") |>
+  mutate(voted = if_else(voted == "Yes", 1, 0))
+```
+
+```{r}
+print(df_ggl)
+```
+
+To begin --- just look at Neighbors treatment vs no mailer
+
+```{r}
+df_ggl_subset <- df_ggl |>
+  filter(treatment %in% c("Neighbors", "Control")) |>
+  mutate(treat = if_else(treatment == "Neighbors", 1, 0))
+```
+
+## Estimating an interactive model in R
+
+```{r}
+fit_interact <- lm(voted ~ treat * sex, data = df_ggl_subset)
+tidy(fit_interact)
+```
+
+. . .
+
+| Term          | Value  | Interpretation                                               |
+| :------------ | :----- | :----------------------------------------------------------- |
+| (Intercept)   | 0.290  | 29% turnout among women in Control group                     |
+| treat         | 0.081  | 8.1% ATE among women                                         |
+| sexmale       | 0.012  | 1.2% higher turnout among men in Control group (i.e., 30.2%) |
+| treat:sexmale | 0.0008 | 0.08% higher ATE among men (i.e., 8.18%)                     |
+
+## Another discrete interaction example
+
+Divide into three categories based on household size:
+
+```{r}
+df_ggl_subset <- df_ggl_subset |>
+  mutate(hh_type = case_when(
+           hh_size == 1 ~ "Single",
+           hh_size == 2 ~ "Couple",
+           TRUE ~ "More than two"))
+
+fit_hh_type <- lm(voted ~ treat * hh_type, data = df_ggl_subset)
+tidy(fit_hh_type)
+```
+
+## Heterogeneous effects across a continuous variable
+
+What if we wanted to see whether the treatment effect varies by age?
+
+. . .
+
+Linear interactive effect model
+$$
+\E[Y_i \mid D_i, X_i] = \alpha + \beta_1 D_i + \beta_2 X_i + \beta_3 (D_i \times X_i)
+$$
+
+Same equation as before, but new interpretation
+
+. . .
+
+Average treatment effect when $X_i = x$:
+$$
+\E[Y_i \mid D_i = 1, X_i = x] - \E[Y_i \mid D_i = 0, X_i = x] = \beta_1 + \beta_3 x
+$$
+
+<br>
+
+$\beta_3$ = how much does treatment effect increase/decrease with each unit of $X_i$?
+
+## Heterogeneous effects across a continuous variable
+
+```{r}
+fit_interact_age <- lm(voted ~ treat * yob, data = df_ggl_subset)
+tidy(fit_interact_age)
+```
+
+. . .
+
+ATE = 1.31 - 0.000628 $\times$ birth year
+
+- born 1925: 10.11% turnout increase
+- born 1950: 8.54% turnout increase
+- born 1975: 6.97% turnout increase
+
+## Heterogeneous effects across a continuous variable
+
+```{r}
+library("interplot")
+interplot(m = fit_interact_age, var1 = "treat", var2 = "yob")
+```
+
+## Heterogeneous effects across a continuous variable
+
+Problem with the standard approach --- is ATE linear in age?
+
+. . .
+
+```{r}
+#| echo: false
+df_ggl_subset |>
+  group_by(yob, treatment) |>
+  summarize(
+    n = n(),
+    turnout = mean(voted)
+  ) |>
+  ggplot(aes(x = yob, y = turnout)) +
+  geom_point(aes(color = treatment, size = n))
+```
+
+## Heterogenous effects across a continuous variable
+
+Another approach --- discretize the continuous variable
+
+```{r}
+df_ggl_subset <- df_ggl_subset |>
+  mutate(yob_cat = cut(yob - 1900, breaks = seq(0, 90, by = 10)))
+
+df_ggl_subset |> relocate(yob_cat, yob)
+```
+
+## Heterogeneous effects across a continuous variable
+
+```{r}
+fit_yob_cat <- lm(voted ~ treat * yob_cat, data = df_ggl_subset)
+tidy(fit_yob_cat)
+```
+
+## Be careful when looking at lots of interactions!
+
+![](sig1.png)
+
+## Be careful when looking at lots of interactions! {visibility="uncounted"}
+
+![](sig2a.png)
+
+## Be careful when looking at lots of interactions! {visibility="uncounted"}
+
+![](sig2b.png)
+
+## Be careful when looking at lots of interactions! {visibility="uncounted"}
+
+![](sig3.png)
+
+## Heterogeneous effects in observational data
+
+What if you're looking for heterogeneous effects when treatment isn't randomly assigned?
+
+Methods are essentially the same --- just include controls alongside the interaction
+
+You *can* include multiple interactions but interpretation gets tricky
+
+# Wrapping up
+
+## What we did today
+
+1. Reasons to look for heterogeneous effects
+   - Theoretical: where we expect mechanisms to be stronger/weaker
+   - Practical: targeting implementation to get max effect
+2. Interpreting interactive regressions
+   - Coefficient on interaction term = *difference* in treatment effects
+   - Special considerations for interaction w/ continuous variable
+
+## Next week
+
+What if we can't measure and control for every plausible confounder?
+
+One way to deal with unobserved confounding --- [instrumental variables]{.alert}
+
+::: {.example}
+Essentially, random *influences* on non-random treatment assignment
+:::
+
+1. Turn in project proposal [this Friday]{.alert}
+2. Read Acemoglu, Johnson, Robinson, "The Colonial Origins of Economic Development"
+3. Read chapter 3 of *Mastering 'Metrics*
