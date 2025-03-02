@@ -1,0 +1,384 @@
+---
+title: "Instrumental variables in theory"
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method: mathjax
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-03-03
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("08_01_instruments_theory/08_01_instruments_theory.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+library("broom")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+\newcommand{\ub}[2]{\underbrace{#1}_{\mathclap{\text{#2}}}}
+\newcommand{\ob}[2]{\overbrace{#1}^{\mathclap{\text{#2}}}}
+
+## Recap
+
+Approaches to causal inference so far
+
+1. Randomized treatment assignment
+   - Selection bias eliminated by design
+   - Diff of means $\approx$ average treatment effect
+
+2. Control for all the confounders (conditional independence)
+   - Matching
+   - Regression with controls
+
+But what if we can't randomize treatment assignment, and some confounders are unmeasured or unobserved?
+
+## Today's agenda
+
+We'll use [instrumental variables]{.alert} to estimate treatment effects
+
+1. Motivating question --- effect of institutions on growth
+   - Correlational evidence
+   - Difficulties for causal inference
+
+2. The instrumental variables approach
+   - Key assumptions
+   - Local average treatment effects (LATE)
+
+# The puzzle: Institutions and growth
+
+## The Great Divergence
+
+![](divergence.png){width="65%" fig-align="center"}
+
+::: {.aside}
+Source: Acemoglu's textbook *Introduction to Modern Economic Growth*
+:::
+
+## Do good political institutions cause faster growth?
+
+![](exprop_risk.png){fig-align="center"}
+
+## Do good political institutions cause faster growth?
+
+**Obvious problem** for causal inference: institutions aren't randomly assigned
+
+. . .
+
+**More subtle problem**: Many confounders are hard to measure
+
+. . .
+
+::: {.callout-note}
+## In-class exercise
+Think of as many country-level factors as you can that might influence both *political institutions* and *economic growth rates*.
+Would any of these be difficult to measure systematically?
+:::
+
+. . .
+
+Unobserved confounding $\leadsto$ matching and regression are biased
+
+- Conditional independence condition fails
+- Differences b/w treated and untreated with same observables may not be due to treatment
+
+## AJR's approach
+
+Institutional qualities aren't randomly assigned --- but we can we find any as-if random [influences]{.underline} on institutions?
+
+. . .
+
+AJR say yes: **European settler mortality** in the colonial period
+
+- Disease environment varied across colonies
+  - Some diseases very fatal to newcomers, others less so
+  - Much less variation in effects on indigenous population
+- The proposed causal chain
+  1. Low settler mortality →
+  2. More settlement by colonizers →
+  3. Less extractive colonial institutions →
+  4. Less extractive contemporary institutions
+
+## Why does an instrument help with causal inference?
+
+For now, assume AJR are right that settler mortality is as-if random
+
+Why does this one thing let us get around all the unobserved confounding?
+
+1. Can isolate effect of settler mortality on economic development
+2. Can isolate effect of settler mortality on political institutions
+
+. . .
+
+And, if settler mortality only affects development *through* institutions:
+
+3. Can work backward to infer effect of institutions on development
+
+**Today's goal:** Figure out why this works
+
+
+# Intro to instruments
+
+## Ingredients of the analysis
+
+Potential outcomes $Y_{1i}, Y_{0i}$
+
+. . .
+
+::: {.example}
+$Y_{1i}$: GDP per capita if institutions are good
+
+$Y_{0i}$: GDP per capita if institutions are bad
+:::
+
+. . .
+
+Instrumental variable $Z_i$
+
+. . .
+
+::: {.example}
+$Z_i = 1$ for low settler mortality, $Z_i = 0$ for high settler mortality
+
+Need not be binary in general, but this is easiest case to think through
+:::
+
+. . .
+
+Potential treatment assignments $D_{1i}, D_{0i}$, given instrument assignment
+
+. . .
+
+::: {.example}
+$D_{1i}$: Good institutions if low settler mortality?
+
+$D_{0i}$: Good institutions if high settler mortality?
+:::
+
+## What makes an instrumental variable?
+
+An [instrumental variable]{.alert} must satisfy three conditions
+
+1. Independence
+   - Instrument is as good as randomly assigned
+   - Satisfies independence w.r.t. treatment assignment and outcome
+
+. . .
+
+2. First stage
+   - Instrument has nonzero effect on treatment assignment
+   - Bigger effect is better for inference
+
+. . .
+
+3. Exclusion restriction
+   - Instrument has no *direct* effect on outcome
+   - Nor any effect through any other channel besides $D_i$
+   - This can be very difficult to justify in practice!
+
+## The IV estimator
+
+Decomposing the "reduced form" effect of instrument on outcome:
+
+$$
+\begin{aligned}
+\text{effect of $Z$ on $Y$}
+&= \ub{(\text{effect of $Z$ on $D$}) \cdot (\text{effect of $D$ on $Y$})}{indirect effect} \\
+&\quad + \; \text{direct effect of $Z$ on $Y$}
+\end{aligned}
+$$
+
+. . .
+
+Exclusion restriction $\leadsto$ Direct effect = 0
+
+. . .
+
+First stage $\leadsto$ Effect of Z on D ≠ 0
+
+. . .
+
+$$
+\begin{aligned}
+\text{effect of $D$ on $Y$}
+&= \frac{\text{effect of $Z$ on $Y$}}{\text{effect of $Z$ on $D$}} \\[0.5em]
+&\approx \frac{\avg[Y_i \mid Z_i = 1] - \avg[Y_i \mid Z_i = 0]}{\avg[D_i \mid Z_i = 1] - \avg[D_i \mid Z_i = 0]}
+\end{aligned}
+$$
+
+## Thinking through the first stage
+
+**Always takers:** $D_{1i} = D_{0i} = 1$
+
+::: {.example}
+Countries that would have good institutions regardless of settler mortality
+:::
+
+. . .
+
+**Never takers:** $D_{1i} = D_{0i} = 0$
+
+::: {.example}
+Countries that would have bad institutions regardless of settler mortality
+:::
+
+. . .
+
+**Compliers:** $D_{1i} = 1$, $D_{0i} = 0$
+
+::: {.example}
+Countries that would have good institutions with low settler mortality, but bad institutions with high settler mortality
+:::
+
+. . .
+
+**Deniers:** $D_{1i} = 0$, $D_{0i} = 1$
+
+::: {.example}
+Countries that would have good institutions with high settler mortality, but bad institutions with low settler mortality
+
+We typically assume there are no deniers
+:::
+
+## What IV is estimating
+
+We typically don't want to assume the treatment effect is uniform
+
+. . .
+
+IV estimation relies heavily on the compliers
+
+. . .
+
+IV estimates a [local average treatment effect (LATE)]{.alert}
+
+- Average treatment effect among the set of compliers
+- $\E[Y_{1i} - Y_{0i} \mid D_{1i} = 1, D_{0i} = 0]$
+
+. . .
+
+Fundamental prob of causal inference $\leadsto$ Can't discern which obs are compliers, always takers, or never takers
+
+## Why IV estimates the LATE
+
+Imagine the data looks like this:
+
+| Subpopulation | Proportion | Baseline average $Y_{0i}$ | Avg treatment effect |
+| :------------ | :--------- | :------------------------ | :------------------- |
+| Always takers | 1/2        | 10                        | 2                    |
+| Compliers     | 1/4        | 4                         | 4                    |
+| Never takers  | 1/4        | 2                         | 0                    |
+
+: {tbl-colwidths="[20, 15, 35, 30]"}
+
+Also imagine same fraction of each group gets Z = 1 (independence)
+
+. . .
+
+$\avg[Y_i \mid Z_i = 1] = \frac{1}{2} \cdot 12 + \frac{1}{4} \cdot 8 + \frac{1}{4} \cdot 2 = 8.5$
+
+. . .
+
+$\avg[Y_i \mid Z_i = 0] = \frac{1}{2} \cdot 12 + \frac{1}{4} \cdot 4 + \frac{1}{4} \cdot 2 = 7.5$
+
+. . .
+
+Reduced form: $\avg[Y_i \mid Z_i = 1] - \avg[Y_i \mid Z_i = 0] = 8.5 - 7.5 = 1$
+
+## Why IV estimates the LATE {visibility="uncounted"}
+
+Imagine the data looks like this:
+
+| Subpopulation | Proportion | Baseline average $Y_{0i}$ | Avg treatment effect |
+| :------------ | :--------- | :------------------------ | :------------------- |
+| Always takers | 1/2        | 10                        | 2                    |
+| Compliers     | 1/4        | 4                         | 4                    |
+| Never takers  | 1/4        | 2                         | 0                    |
+
+: {tbl-colwidths="[20, 15, 35, 30]"}
+
+Also imagine same fraction of each group gets Z = 1 (independence)
+
+. . .
+
+First stage: $\avg[D_i \mid Z_i = 1] - \avg[D_i \mid Z_i = 0] = 0.25$ (% compliers)
+
+. . .
+
+IV estimate equals ATE among compliers: $$\frac{\text{reduced form}}{\text{first stage}} = \frac{1}{0.25} = 4$$
+
+## Bonus slide: Why IV estimates the LATE, in general
+
+| Subpopulation | Proportion | Baseline average $Y_{0i}$ | Avg treatment effect |
+| :------------ | :--------- | :------------------------ | :------------------- |
+| Always takers | $q_a$      | $y_a$                     | $\tau_a$             |
+| Compliers     | $q_c$      | $y_c$                     | $\tau_c$             |
+| Never takers  | $q_n$      | $y_n$                     | $\tau_n$             |
+
+: {tbl-colwidths="[20, 20, 30, 30]"}
+
+\begin{align}
+\avg[Y_i \mid Z_i = 1] &= q_a (y_a + \tau_a) + q_c (y_c + \tau_c) + q_n y_n \\
+\avg[Y_i \mid Z_i = 0] &= q_a (y_a + \tau_a) + q_c y_c + q_n y_n \\
+\avg[D_i \mid Z_i = 1] &= q_a + q_c \\
+\avg[D_i \mid Z_i = 0] &= q_a \\
+\text{IV est} &= \frac{\avg[Y_i \mid Z_i = 1] - \avg[Y_i \mid Z_i = 0]}{\avg[D_i \mid Z_i = 1] - \avg[D_i \mid Z_i = 0]} \\
+&= \frac{q_c \tau_c}{q_c} = \tau_c.
+\end{align}
+
+## Limitations of the IV technique
+
+1. LATE ≠ ATE
+   - Must either care about complier effect specifically
+   - ...or have reason to think overall effect not much different
+
+2. Big standard errors
+   - Essentially throwing away data to isolate randomized part of the effect
+   - Particularly acute if first stage is small ([weak instrument]{.alert})
+
+3. Only works under stringent assumptions
+   - Exclusion restriction can be very hard to justify
+   - e.g., what if disease affected development of port infrastructure?
+
+
+# Wrapping up
+
+## What we did today
+
+1. AJR's puzzle: Do institutions increase growth?
+   - Present-day development strongly correlated w/ institutional quality
+   - But tons of confounders, including many hard to observe
+   - Settler mortality as potential instrument
+
+2. Instrumental variables assumptions
+   - Independence: IV is as-if random
+   - First stage: IV affects treatment assignment
+   - Exclusion restriction: IV only affects outcome through treatment
+
+3. Local average treatment effect
+   - IV only yields average among compliers
+
+**Next time:** IV estimation in practice, including with control variables
+
