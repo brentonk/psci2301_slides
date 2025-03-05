@@ -1,0 +1,356 @@
+---
+title: "Instrumental variables in practice"
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method: mathjax
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-03-05
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("08_02_instruments_practice/08_02_instruments_practice.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+library("broom")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5, width = 100)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+\newcommand{\ub}[2]{\underbrace{#1}_{\mathclap{\text{#2}}}}
+\newcommand{\ob}[2]{\overbrace{#1}^{\mathclap{\text{#2}}}}
+
+## Recap
+
+How can we draw causal inferences when there's unobserved confounding?
+
+One approach --- [instrumental variables]{.alert}
+
+1. Philosophy
+   - Find an as-if-random influence on treatment assignment
+   - Use it to isolate effect of treatment from confounders
+
+2. Requirements for an instrumental variable
+   - Independence: Instrument cannot be confounded (ideally random)
+   - First stage: Instrument must affect treatment status (ideally a lot)
+   - Exclusion restriction: Instrument only affects outcome through treatment, not directly or through any other channel
+
+
+## Today's agenda
+
+User's guide to instrumental variables
+
+1. Working through AJR data
+   - Visual evidence of the relationship
+   - Estimating the effect of institutions on growth
+
+2. Practical issues
+   - Checking for weak instruments
+   - Calculating standard errors
+   - When and how to include controls
+
+# Analyzing AJR's data
+
+## The data
+
+Can obtain from [Acemoglu's data archive site](https://economics.mit.edu/people/faculty/daron-acemoglu/data-archive)
+
+```{r}
+library("haven")  # to read data in proprietary formats
+df_ajr <- read_dta("maketable5.dta")
+print(df_ajr)
+```
+
+## Raw correlation of institutions and development
+
+```{r}
+#| echo: false
+df_ajr <- df_ajr |>
+  mutate(pgp95 = exp(logpgp95)) |>
+  filter(!is.na(logem4), !is.na(logpgp95), !is.na(avexpr)) |>
+  filter(baseco == 1)
+df_ajr |>
+  ggplot(aes(x = avexpr, y = pgp95, label = shortnam)) +
+  geom_text() +
+  geom_smooth() +
+  scale_y_log10() +
+  labs(
+    x = "Average expropriation risk, 1985-1995",
+    y = "Per capita GDP, 1995 dollars",
+    title = "Replicating AJR Figure 2"
+  )
+```
+
+## First stage: Settler mortality and institutions
+
+```{r}
+#| echo: false
+df_ajr <- df_ajr |>
+  mutate(em4 = exp(logem4))
+df_ajr |>
+  ggplot(aes(x = em4, y = avexpr, label = shortnam)) +
+  geom_text() +
+  geom_smooth() +
+  scale_x_log10() +
+  labs(
+    x = "European settler mortality, per 1000 soldiers",
+    y = "Average expropriation risk, 1985-1995",
+    title = "Replicating AJR Figure 3"
+  )
+```
+
+## Reduced form: Settler mortality and development
+
+```{r}
+#| echo: false
+df_ajr |>
+  ggplot(aes(x = em4, y = pgp95, label = shortnam)) +
+  geom_text() +
+  geom_smooth() +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(
+    x = "European settler mortality, per 1000 soldiers",
+    y = "Per capita GDP, 1995 dollars",
+    title = "Correlation between instrument and outcome"
+  )
+```
+
+## Instrumental variables "by hand"
+
+```{r}
+# Effect of settler mortality on institutions
+fit_first <- lm(avexpr ~ logem4, data = df_ajr)
+tidy(fit_first)
+```
+
+```{r}
+# Effect of settler mortality on development
+fit_reduced <- lm(logpgp95 ~ logem4, data = df_ajr)
+tidy(fit_reduced)
+```
+
+## Instrumental variables "by hand"
+
+```{r}
+coef_first <- coef(fit_first)["logem4"]
+coef_reduced <- coef(fit_reduced)["logem4"]
+coef_reduced / coef_first
+```
+
+. . .
+
+![](ajr_tab4col1.png){fig-align="center" width="50%"}
+
+## Aside: Interpreting regressions with logs
+
+| Y specification | X specification | Interpretation                                                          |
+| :-------------- | :-------------- | :---------------------------------------------------------------------- |
+| Y               | X               | 1 unit increase in X $\leadsto$ $\beta$ unit increase in Y              |
+| Y               | ln X            | 1% increase in X $\leadsto$ $\beta/100$ unit increase in Y              |
+| ln Y            | X               | 1 unit increase in X $\leadsto$ $100 (e^\beta - 1)$ percent change in Y |
+| ln Y            | ln X            | 1% increase in X $\leadsto$ $\beta$ percent change in Y                 |
+
+: {tbl-colwidths="[20, 20, 60]"}
+
+<!-- For more details, see [my grad stats notes](https://bkenkel.com/pdaps/specification.html#logarithmic-models) -->
+
+. . .
+
+1. Reduced form regression: ln(GDP per capita) ~ ln(mortality)
+   - Coefficient estimate: $\hat{\beta} = -0.573$
+   - 1% mortality increase $\leadsto$ 0.573% decrease in GDP per capita
+
+. . .
+
+2. IV estimate: ln(GDP per capita) ~ expropriation risk index
+   - Coefficient estimate: $\hat{\beta} = 0.944$
+   - $e^{0.944} \approx 2.57$, use `exp()` function in R
+   - 1 unit risk increase $\leadsto$ 157% increase in GDP per capita
+
+## Some questions at this point
+
+Is this instrument strong enough that we can rely on it?
+
+- Typical rule: F-statistic of first-stage regression should be 10 or higher
+- (don't worry if that sounds like gobbledygook at this point)
+
+. . .
+
+Is there enough evidence against zero causal effect?
+
+- We need standard errors to calculate hypothesis tests
+- How do we calculate them?
+
+. . .
+
+`ivreg()` from the `AER` package solves both of these issues at once
+
+## Using ivreg()
+
+```{r}
+library("AER")
+fit_iv <- ivreg(logpgp95 ~ avexpr | logem4, data = df_ajr)
+summary(fit_iv, diagnostics = TRUE)
+```
+
+## Instrumental variables versus ordinary regression
+
+Regression estimate, ignoring confounding:
+
+```{r}
+fit_ols <- lm(logpgp95 ~ avexpr, data = df_ajr)
+tidy(fit_ols)
+```
+
+. . .
+
+IV standard errors typically much larger
+
+```{r}
+tidy(fit_iv)
+```
+
+# Including controls with instruments
+
+## A confounded instrument
+
+Possible worry: Settler mortality doesn't satisfy independence condition
+
+Potential confounding effect of geography
+
+- Tropical location $\leadsto$ higher settler mortality
+- Tropical location $\leadsto$ present-day growth differences
+
+Luckily, geography is easily measurable
+
+But need to use [two stage least squares]{.alert} for estimation
+
+## Two stage least squares requirements
+
+Basic ingredients
+
+- Outcome of interest $Y_i$
+- Treatment variable $D_i$
+- Instrument $Z_i$
+- Observed confounders $X_{i1}, \ldots, X_{iK}$
+
+. . .
+
+Now we assume [conditional independence]{.underline} of the instrument:
+
+- Instrument "assignment" as-if random among observations with same $X$'s
+  - e.g., no confounders for settler mortality in countries at same latitude
+- Still allowing for unobserved confounding in *treatment* assignment
+
+## Two stage least squares methodology
+
+1. First stage regression
+   - Run regression of the form `treatment ~ instrument + confounders`
+   - Save predicted values from that regression, `pred_treatment`
+   - These represent the as-if random *component* of treatment assignment
+
+. . .
+
+2. Final regression
+   - Run regression of the form `outcome ~ pred_treatment + confounders`
+   - Coefficient on `pred_treatment` = 2SLS estimate of treatment effect
+
+## Without confounders, 2SLS yields same answer
+
+```{r}
+df_ajr_aug <- augment(fit_first, newdata = df_ajr)
+print(df_ajr_aug)
+```
+
+```{r}
+fit_2sls <- lm(logpgp95 ~ .fitted, data = df_ajr_aug)
+tidy(fit_2sls)
+```
+
+## 2SLS with confounders
+
+```{r}
+#| echo: false
+options(width = 45)
+```
+
+```{r}
+#| output-location: column
+
+# Run first stage regression
+fit_first_lat <- lm(avexpr ~ logem4 + lat_abst, data = df_ajr)
+
+# Extract predicted values
+df_ajr_aug <- augment(fit_first_lat, newdata = df_ajr)
+
+# Run final regression
+fit_2sls_lat <- lm(logpgp95 ~ .fitted + lat_abst, data = df_ajr_aug)
+tidy(fit_2sls_lat)
+```
+
+. . .
+
+![](ajr_tab4col1.png){fig-align="center" width="50%"}
+
+## Getting the standard errors right
+
+```{r}
+#| echo: false
+options(width = 100)
+```
+
+```{r}
+fit_iv_lat <- ivreg(logpgp95 ~ avexpr + lat_abst | logem4 + lat_abst, data = df_ajr)
+summary(fit_iv_lat, diagnostics = TRUE)
+```
+
+
+# Wrapping up
+
+## What we did today
+
+Using instrumental variables in practice
+
+1. Look at the data to get a gut check
+
+2. Fit model using `ivreg()`
+   - Check for weak instruments statistic >10
+   - Don't trust "by hand" standard errors
+
+3. Include controls if instrument is confounded
+
+## After spring break
+
+Assignments
+
+- Problem Set 4 to be posted today, due [Wednesday, March 19]{.alert}
+- Final project proposals to be graded by end of this week
+- Problem Set 3 to be graded (+ answer key posted) over the break
+
+Topic for the week after spring break --- [regression discontinuity]{.alert}
+
+1. Read Hall's "What Happens When Extremists Win Primaries?"
+2. Read chapter 4 of *Mastering 'Metrics*
+

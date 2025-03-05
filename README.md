@@ -21,3 +21,5 @@ All slides are written in Quarto using [my fork](https://github.com/brentonk/qua
 | Regression for causal inference   | 2025-02-24 | [PDF](/07_01_regression_theory/07_01_regression_theory.pdf)             | [QMD](/07_01_regression_theory/07_01_regression_theory.qmd)             |
 | Regression with interaction terms | 2025-02-26 | [PDF](/07_02_regression_interactions/07_02_regression_interactions.pdf) | [QMD](/07_02_regression_interactions/07_02_regression_interactions.qmd) |
 | Instrumental variables in theory  | 2025-03-03 | [PDF](/08_01_instruments_theory/08_01_instruments_theory.pdf)           | [QMD](/08_01_instruments_theory/08_01_instruments_theory.qmd)           |
+| Instrumental variables in practice | 2025-03-05 | [PDF](/08_02_instruments_practice/08_02_instruments_practice.pdf)         | [QMD](/08_02_instruments_practice/08_02_instruments_practice.qmd)         |
+
