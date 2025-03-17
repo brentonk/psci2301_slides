@@ -11,3 +11,6 @@
 
 # VSCode
 *.code-workspace
+
+# R files tracking class lectures
+20[0-9][0-9]-*.[Rr]

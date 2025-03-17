@@ -1,0 +1,724 @@
+---
+title: "Regression discontinuity designs"
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method: mathjax
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-03-17
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("09_01_rdd_theory/09_01_rdd_theory.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+library("broom")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5, width = 100)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+\newcommand{\ub}[2]{\underbrace{#1}_{\mathclap{\text{#2}}}}
+\newcommand{\ob}[2]{\overbrace{#1}^{\mathclap{\text{#2}}}}
+
+## Recap
+
+Week before spring break --- [instrumental variables]{.alert}
+
+1. Scope of application
+   - When treatment assignment is nonrandom + some confounders unobserved
+   - ... but there's an observed random *influence* on treatment assignment
+
+2. Conditions for instrument
+   - Independence: instrument value not confounded
+   - First stage: instrument affects treatment assignment (hopefully strongly)
+   - Exclusion restriction: only affects outcome via treatment
+
+3. IV estimation via two-stage least squares (2SLS)
+
+## Today's agenda
+
+Another method for observational data with unmeasured confounders: [regression discontinuity design]{.alert} (RDD)
+
+- Used when treatment is assigned by a hard threshold on a continuous value
+- Near the threshold, assignment is as-if random
+- Can estimate LATE by comparing observations just above the threshold to those just below
+
+
+# Motivating question: Ideology and election success
+
+## Does moderation win elections?
+
+Perpetual debate: Do moderates have an electoral advantage?
+
+Some reasons to think so:
+
+- Spatial model --- people vote for ideologically closest candidate
+- Plurality of Americans describe selves as moderate
+- Moderates could raise more money from business interests
+
+. . .
+
+Some reasons to think not:
+
+- Independents less informed, less likely to vote, less coherent in opinions
+- Ideologues could raise more money from enthusiastic base
+- Potential advantage of appearing principled, not calculating
+- Moderation is correlated with **lower** vote shares among House members
+
+## A tale of two Democratic representatives
+
+:::: {.columns}
+::: {.column}
+![](aoc.jpg){fig-align="center" width="60%"}
+
+- Alexandria Ocasio-Cortez, NY-14
+- Self-identified socialist
+- Won 70.6% of vote in 2022
+:::
+::: {.column .fragment}
+![](mgp.jpg){fig-align="center" width="60%"}
+
+- Marie Gluesenkamp Perez, WA-3
+- Centrist (e.g., didn't endorse Harris)
+- Won 50.1% of vote in 2022
+:::
+::::
+
+## Congressional moderates have lower vote shares
+
+```{r}
+#| echo: false
+#| cache: true
+library("stringdist")
+library("ggrepel")
+df_house_raw <- read_csv(here("data/1976-2022-house.csv"))
+df_voteview_raw <- read_csv(here("data/H118_members.csv"))
+
+df_house <- df_house_raw |>
+  filter(year == 2022, stage == "GEN", special == FALSE) |>
+  group_by(state_po, district, candidate) |>
+  summarize(
+    votes = sum(candidatevotes),
+    party = party[candidatevotes == max(candidatevotes)]
+  ) |>
+  group_by(state_po, district) |>
+  mutate(share = votes / sum(votes)) |>
+  filter(share == max(share)) |>
+  ungroup() |>
+  mutate(
+    party = str_to_title(party),
+    surname = str_split_i(candidate, ",", 1),
+    surname = str_replace(surname, " III$", ""),
+    surname = str_replace(surname, " IV$", ""),
+    surname = str_split_i(surname, " ", -1),
+    district = if_else(district == 0, 1, district)
+  ) |>
+  filter(party %in% c("Democrat", "Republican"))
+
+df_voteview <- df_voteview_raw |>
+  filter(party_code %in% c(100, 200)) |>
+  mutate(
+    surname_vv = str_split_i(bioname, ", ", 1),
+    surname_vv = str_split_i(surname_vv, " ", -1),
+    party_vv = if_else(party_code == 100, "Democrat", "Republican")
+  ) |>
+  select(surname_vv, state_po = state_abbrev, district = district_code, party_vv, nominate_dim1)
+
+df_house_ideology <- df_house |>
+  left_join(df_voteview, by = c("state_po", "district")) |>
+  filter(party == party_vv) |>
+  mutate(name_dist = stringdist(
+    str_to_lower(surname),
+    str_to_lower(surname_vv),
+    method = "jw"
+  )) |>
+  filter(name_dist < 0.2) |>
+  mutate(
+    lbl = str_c(
+      str_to_title(surname),
+      " (",
+      state_po,
+      "-",
+      district,
+      ")"
+    ),
+    .before = 1
+  )
+
+df_house_ideology |>
+  ggplot(aes(x = nominate_dim1, y = 100 * share, label = lbl)) +
+  geom_point() +
+  geom_text_repel() +
+  geom_smooth() +
+  facet_wrap(~ party, ncol = 2, scales = "free_x") +
+  labs(
+    x = "NOMINATE estimate of legislator ideology",
+    y = "Vote share in 2022 general election",
+    title = "Ideology and vote share for the 118th House (2023-24)"
+  )
+```
+
+## Does moderation *cause* lower vote shares?
+
+The correlational question: Do moderates get fewer votes? (yes)
+
+The causal question: If we replaced any given moderate with an extremist, would their party get fewer votes?
+
+. . .
+
+Potential confounders:
+
+- District ideology
+  - Deep red/blue district $\leadsto$ safe seat, electorate wants ideologue
+  - Purple district $\leadsto$ close election, electorate wants moderate
+- Candidate quality
+  - Charismatic candidate maybe can get away with more extreme views
+- Opponent quality and ideology
+
+## Studying the effect of moderation on vote shares
+
+Experimental manipulation not plausible
+
+Difficulty for regression/matching approach --- **unobserved confounders**
+
+- District competitiveness fairly easy to observe
+- District ideology kinda-sorta observable (presidential results, polls)
+- Candidate and opponent quality pretty hard to measure
+
+No obvious instruments
+
+- Would need an as-if random influence on candidate ideology
+- ... that also doesn't affect election results through any other channel!
+
+## The regression discontinuity approach
+
+:::: {.columns}
+::: {.column}
+General election candidates in contemporary US determined by primary elections
+
+In general, districts where extremist wins primary are different from those where moderate wins
+
+But districts where extremist [barely wins]{.underline} are not so different from those where moderate [barely wins]{.underline}
+
+Hall's approach: only compare these barely-winners
+:::
+::: {.column}
+![](hall.png){fig-align="center" width="80%"}
+:::
+::::
+
+
+# Regression discontinuity design
+
+## Regression discontinuity: The basic idea
+
+Some [discrete treatments]{.alert} determined by continuous [running variable]{.alert}
+
+- Income threshold for government program eligibility
+- Test score threshold for admission to an academic program
+- Vote margin threshold for winning an election
+
+. . .
+
+Key assumption: No big differences in confounders around the threshold
+
+- People making $31k not much different than those making $29k
+- Students scoring 1490 on SAT not much different than those scoring 1510
+- Candidates who win primary by 1% not much different than those who lose by 1%
+
+. . .
+
+$\Rightarrow$ Estimate treatment effect by comparing obs near threshold
+
+## Regression discontinuity: The model
+
+Continuous [running variable]{.alert} $R_i$
+
+. . .
+
+Treatment $D_i \in \{0, 1\}$, determined entirely by running variable
+$$
+D_i = \begin{cases}
+  0 & \text{if $R_i < 0$}, \\
+  1 & \text{if $R_i \geq 0$}.
+\end{cases}
+$$
+
+. . .
+
+Potential outcomes $Y_{1i}, Y_{0i}$
+
+- Key assumption: $\E[Y_{1i} \mid R_i]$ and $\E[Y_{0i} \mid R_i]$ continuous functions of $R_i$
+- Small change in running variable $\leadsto$ small change in potential outcome
+
+. . .
+
+Can estimate $\E[Y_{1i} - Y_{0i} \mid R_i \approx 0]$ by comparing outcomes near threshold
+
+## Regression discontinuity model, illustrated
+
+```{r}
+#| echo: false
+ey0 <- \(r) 20 + 60 * pnorm(r - 1.25)
+ey1 <- \(r) 30 + 60 * pnorm(r)
+tibble(r = seq(-2, 2, length.out = 201)) |>
+  mutate(y0 = ey0(r), y1 = ey1(r)) |>
+  ggplot(aes(x = r)) +
+  geom_line(aes(y = y0), color = "red") +
+  geom_line(aes(y = y1), color = "blue") +
+  annotate("text", x = -1, y = 17, label = "E[Y_0 | R]", color = "red", size = 5, hjust = 0.25) +
+  annotate("text", x = 0.5, y = 80, label = "E[Y_1 | R]", color = "blue", size = 5, hjust = 0.5) +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Potential outcomes", limits = c(0, 100))
+```
+
+## Regression discontinuity model, illustrated {visibility="uncounted"}
+
+```{r}
+#| echo: false
+ey0 <- \(r) 20 + 60 * pnorm(r - 1.25)
+ey1 <- \(r) 30 + 60 * pnorm(r)
+tibble(r = seq(-2, 2, length.out = 201)) |>
+  mutate(y0 = ey0(r), y1 = ey1(r)) |>
+  ggplot(aes(x = r)) +
+  geom_line(aes(y = y0), color = "red") +
+  geom_line(aes(y = y1), color = "blue") +
+  annotate("text", x = -1, y = 17, label = "E[Y_0 | R]", color = "red", size = 5, hjust = 0.25) +
+  annotate("text", x = 0.5, y = 80, label = "E[Y_1 | R]", color = "blue", size = 5, hjust = 0.5) +
+  annotate("segment", x = 0, y = ey0(0), yend = ey1(0), linetype = "dashed") +
+  annotate("text", x = 0.025, y = 50, label = "E[Y_1 - Y_0 | R = 0]", size = 5, hjust = 0) +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Potential outcomes", limits = c(0, 100))
+```
+
+## Regression discontinuity model, illustrated {visibility="uncounted"}
+
+```{r}
+#| echo: false
+ey0 <- \(r) 20 + 60 * pnorm(r - 1.25)
+ey1 <- \(r) 30 + 60 * pnorm(r)
+tibble(r = seq(-2, 2, length.out = 201)) |>
+  mutate(y0 = ey0(r), y1 = ey1(r)) |>
+  ggplot(aes(x = r)) +
+  geom_line(aes(y = if_else(r <= 0, y0, NA)), color = "red") +
+  geom_line(aes(y = if_else(r >= 0, y1, NA)), color = "blue") +
+  annotate("text", x = -1, y = 17, label = "E[Y_0 | R]", color = "red", size = 5, hjust = 0.25) +
+  annotate("text", x = 0.5, y = 80, label = "E[Y_1 | R]", color = "blue", size = 5, hjust = 0.5) +
+  annotate("segment", x = 0, y = ey0(0), yend = ey1(0), linetype = "dashed") +
+  annotate("text", x = 0.025, y = 50, label = "E[Y_1 - Y_0 | R = 0]", size = 5, hjust = 0) +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Potential outcomes", limits = c(0, 100))
+```
+
+## An invalid regression discontinuity model
+
+```{r}
+#| echo: false
+ey0 <- function(r) {
+  case_when(
+    r < -1 ~ 10,
+    r < 0 ~ 30,
+    r < 1 ~ 50,
+    r < 2 ~ 70,
+    TRUE ~ 70
+  )
+}
+tibble(r = seq(-2, 2, length.out = 201)) |>
+  mutate(y0 = ey0(r), y1 = ey1(r)) |>
+  ggplot(aes(x = r)) +
+  geom_line(aes(y = y0, group = cut(r, breaks = seq(-3, 3, by = 1), right = FALSE)), color = "red") +
+  geom_line(aes(y = y1), color = "blue") +
+  annotate("point", x = c(-1, 0, 1), y = c(10, 30, 50), shape = 21, fill = "white", color = "red", size = 2) +
+  annotate("point", x = c(-1, 0, 1), y = c(30, 50, 70), shape = 21, fill = "red", color = "red", size = 2) +
+  annotate("text", x = -0.5, y = 25, label = "E[Y_0 | R]", color = "red", size = 5) +
+  annotate("text", x = 0.5, y = 80, label = "E[Y_1 | R]", color = "blue", size = 5, hjust = 0.5) +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Potential outcomes", limits = c(0, 100))
+```
+
+## An invalid regression discontinuity model {visibility="uncounted"}
+
+```{r}
+#| echo: false
+tibble(r = seq(-2, 2, length.out = 201)) |>
+  mutate(y0 = ey0(r), y1 = ey1(r)) |>
+  ggplot(aes(x = r)) +
+  geom_line(aes(y = y0, group = cut(r, breaks = seq(-3, 3, by = 1), right = FALSE)), color = "red") +
+  geom_line(aes(y = y1), color = "blue") +
+  annotate("point", x = c(-1, 0, 1), y = c(10, 30, 50), shape = 21, fill = "white", color = "red", size = 2) +
+  annotate("point", x = c(-1, 0, 1), y = c(30, 50, 70), shape = 21, fill = "red", color = "red", size = 2) +
+  annotate("segment", x = 0, y = ey0(0), yend = ey1(0), linetype = "dashed") +
+  annotate("text", x = 0.025, y = 56.5, label = "E[Y_1 - Y_0 | R = 0]", size = 5, hjust = 0) +
+  annotate("text", x = -0.5, y = 25, label = "E[Y_0 | R]", color = "red", size = 5) +
+  annotate("text", x = 0.5, y = 80, label = "E[Y_1 | R]", color = "blue", size = 5, hjust = 0.5) +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Potential outcomes", limits = c(0, 100))
+```
+
+## An invalid regression discontinuity model {visibility="uncounted"}
+python
+```{r}
+#| echo: false
+tibble(r = seq(-2, 2, length.out = 201)) |>
+  mutate(y0 = ey0(r), y1 = ey1(r)) |>
+  ggplot(aes(x = r)) +
+  geom_line(aes(y = if_else(r <= 0, y0, NA), group = cut(r, breaks = seq(-3, 3, by = 1), right = FALSE)), color = "red") +
+  geom_line(aes(y = if_else(r >= 0, y1, NA)), color = "blue") +
+  annotate("point", x = c(-1, 0), y = c(10, 30), shape = 21, fill = "white", color = "red", size = 2) +
+  annotate("point", x = c(-1), y = c(30), shape = 21, fill = "red", color = "red", size = 2) +
+  annotate("segment", x = 0, y = ey0(0), yend = ey1(0), linetype = "dashed") +
+  annotate("text", x = 0.025, y = 56.5, label = "E[Y_1 - Y_0 | R = 0]", size = 5, hjust = 0) +
+  annotate("text", x = -0.5, y = 25, label = "E[Y_0 | R]", color = "red", size = 5) +
+  annotate("text", x = 0.5, y = 80, label = "E[Y_1 | R]", color = "blue", size = 5, hjust = 0.5) +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Potential outcomes", limits = c(0, 100))
+```
+
+## Estimating the regression discontinuity model
+
+The general approach to estimation:
+
+1. Model relationship b/w running variable and outcome below threshold
+2. Model relationship b/w running variable and outcome above threshold
+3. LATE estimate = difference in predictions at threshold
+
+. . .
+
+Specific implementation depends on shape of these relationships
+
+1. If average outcome is a linear function of running variable
+   - Linear regression with running/treatment interaction
+
+2. If average outcome is a nonlinear function of running variable
+   - Polynomial regressions
+   - Linear regression within "bandwidth" of threshold
+
+## The linear case
+
+```{r}
+#| echo: false
+set.seed(3212)
+n <- 200
+df_linear <- tibble(
+  r = runif(n, -2, 2),
+  group = factor(as.numeric(r >= 0), levels = 0:1, labels = c("control", "treatment")),
+  y = if_else(r < 0, 50 + 10 * r, 80 - 5 * r) + rnorm(n, sd = 5)
+)
+df_linear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point() +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+## The linear case {visibility="uncounted"}
+
+```{r}
+#| echo: false
+set.seed(3212)
+n <- 200
+df_linear <- tibble(
+  r = runif(n, -2, 2),
+  group = factor(as.numeric(r >= 0), levels = 0:1, labels = c("control", "treatment")),
+  y = if_else(r < 0, 50 + 10 * r, 80 - 5 * r) + rnorm(n, sd = 5)
+)
+df_linear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point() +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_smooth(data = filter(df_linear, group == "control"), method = "lm") +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+## The linear case {visibility="uncounted"}
+
+```{r}
+#| echo: false
+set.seed(3212)
+n <- 200
+df_linear <- tibble(
+  r = runif(n, -2, 2),
+  group = factor(as.numeric(r >= 0), levels = 0:1, labels = c("control", "treatment")),
+  y = if_else(r < 0, 50 + 10 * r, 80 - 5 * r) + rnorm(n, sd = 5)
+)
+df_linear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point() +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_smooth(data = filter(df_linear, group == "control"), method = "lm") +
+  geom_smooth(data = filter(df_linear, group == "treatment"), method = "lm") +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+## The linear case {visibility="uncounted"}
+
+```{r}
+#| echo: false
+set.seed(3212)
+n <- 200
+df_linear <- tibble(
+  r = runif(n, -2, 2),
+  group = factor(as.numeric(r >= 0), levels = 0:1, labels = c("control", "treatment")),
+  treat = as.numeric(r >= 0),
+  y = if_else(r < 0, 50 + 10 * r, 80 - 5 * r) + rnorm(n, sd = 5)
+)
+df_linear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point() +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_smooth(data = filter(df_linear, group == "control"), method = "lm") +
+  geom_smooth(data = filter(df_linear, group == "treatment"), method = "lm") +
+  annotate("segment", x = 0, xend = 0, y = 53, yend = 80, size = 1.5) +
+  annotate("segment", x = 0, xend = -0.05, y = 53, yend = 53, size = 1.5) +
+  annotate("segment", x = 0, xend = 0.05, y = 80, yend = 80, size = 1.5) +
+  annotate("text", x = 0, y = (53+80)/2, label = "LATE est", size = 5, hjust = -0.1) +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+## Regression model for the linear case
+
+Regression equation to use:
+$$
+\E[Y_i] = \alpha + \beta_1 R_i + \beta_2 D_i + \beta_3 (R_i \times D_i)
+$$
+
+. . .
+
+:::: {.columns}
+::: {.column}
+$\alpha$: average control outcome at threshold
+
+$\beta_1$: slope in control group
+
+$\beta_2$: LATE
+
+$\beta_1 + \beta_3$: slope in treatment group
+:::
+::: {.column}
+```{r}
+#| echo: false
+options(width = 40)
+```
+
+```{r}
+fit_linear <- lm(y ~ r * treat, data = df_linear)
+tidy(fit_linear)
+```
+:::
+::::
+
+## The nonlinear case: Polynomial regression approach
+
+```{r}
+#| echo: false
+set.seed(1428)
+n <- 300
+df_nonlinear <- tibble(
+  r = runif(n, -2, 2),
+  group = factor(as.numeric(r >= 0), levels = 0:1, labels = c("control", "treatment")),
+  treat = as.numeric(r >= 0),
+  y = if_else(
+    r < 0,
+    10 + 40 * (r + 1)^2,
+    80 * exp(-r)
+  ) + rnorm(n, sd = 5)
+)
+df_fit_0 <- lm(y ~ r + I(r^2) + I(r^3), data = df_nonlinear |> filter(r < 0)) |>
+  augment(newdata = df_nonlinear)
+df_fit_1 <- lm(y ~ r + I(r^2) + I(r^3), data = df_nonlinear |> filter(r >= 0)) |>
+  augment(newdata = df_nonlinear)
+df_nonlinear <- df_nonlinear |>
+  add_column(pred = if_else(df_nonlinear$r < 0, df_fit_0$.fitted, df_fit_1$.fitted))
+df_nonlinear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point() +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+## The nonlinear case: Polynomial regression approach {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_nonlinear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point() +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_line(data = df_nonlinear |> filter(r < 0), aes(y = pred), size = 1) +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+## The nonlinear case: Polynomial regression approach {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_nonlinear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point() +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_line(data = df_nonlinear |> filter(r < 0), aes(y = pred), size = 1) +
+  geom_line(data = df_nonlinear |> filter(r >= 0), aes(y = pred), size = 1) +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+## The nonlinear case: Polynomial regression approach {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_nonlinear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point() +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_line(data = df_nonlinear |> filter(r < 0), aes(y = pred), size = 1) +
+  geom_line(data = df_nonlinear |> filter(r >= 0), aes(y = pred), size = 1) +
+  annotate("segment", x = 0, xend = 0, y = 50, yend = 80, size = 1.5) +
+  annotate("segment", x = 0, xend = -0.05, y = 50, yend = 50, size = 1.5) +
+  annotate("segment", x = 0, xend = 0.05, y = 80, yend = 80, size = 1.5) +
+  annotate("text", x = 0, y = (50+80)/2, label = "LATE est", size = 5, hjust = 1.1) +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+## The problem with polynomials
+
+Polynomial regression predictions *very* sensitive to small changes in data
+
+- Example of the [bias-variance tradeoff]{.alert} in statistics
+- More flexible model $\leadsto$ higher standard errors, more overfitting
+
+Predictions at boundary points are especially sensitive to small changes
+
+- Exactly what we care about for RDD!
+
+My heuristic: Would the discontinuity be obvious if you didn't plot the polynomial curves?
+
+## A questionable polynomial RDD
+
+![](bad_polynomial.png){fig-align="center" width="55%"}
+
+::: {.aside}
+Example via the statistician Andrew Gelman's blog: <https://statmodeling.stat.columbia.edu/2013/08/05/evidence-on-the-impact/>
+:::
+
+## Alternative approach: Linear RDD within a bandwidth
+
+When not assuming linearity, it doesn't make a lot of sense to use data far from boundary to make predictions close to boundary
+
+. . .
+
+Even nonlinear functions are [approximately linear]{.underline} on small intervals
+
+. . .
+
+Alternative to polynomials for RDD with nonlinear relationships:
+
+1. Restrict sample to a "bandwidth" $h$ around threshold, $|R_i| < h$
+2. Use linear RDD on restricted sample
+
+Throwing away some data for sake of statistical precision!
+
+## RDD within a bandwidth
+
+```{r}
+#| echo: false
+h <- 0.5
+df_nonlinear <- df_nonlinear |>
+  mutate(in_bandwidth = if_else(abs(r) <= h, "yes", "no"))
+df_nonlinear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point(aes(alpha = in_bandwidth)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+## RDD within a bandwidth {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_nonlinear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point(aes(alpha = in_bandwidth)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_smooth(data = filter(df_nonlinear, abs(r) <= h, r < 0), method = "lm") +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+## RDD within a bandwidth {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_nonlinear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point(aes(alpha = in_bandwidth)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_smooth(data = filter(df_nonlinear, abs(r) <= h, r < 0), method = "lm") +
+  geom_smooth(data = filter(df_nonlinear, abs(r) <= h, r >= 0), method = "lm") +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+## RDD within a bandwidth {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_nonlinear |>
+  ggplot(aes(x = r, y = y, color = group)) +
+  geom_point(aes(alpha = in_bandwidth)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_smooth(data = filter(df_nonlinear, abs(r) <= h, r < 0), method = "lm") +
+  geom_smooth(data = filter(df_nonlinear, abs(r) <= h, r >= 0), method = "lm") +
+  annotate("segment", x = 0, xend = 0, y = 50, yend = 80, size = 1.5) +
+  annotate("segment", x = 0, xend = -0.05, y = 50, yend = 50, size = 1.5) +
+  annotate("segment", x = 0, xend = 0.05, y = 80, yend = 80, size = 1.5) +
+  annotate("text", x = 0, y = (50+80)/2, label = "LATE est", size = 5, hjust = 1.1) +
+  scale_x_continuous("Running variable") +
+  scale_y_continuous("Outcome", limits = c(0, 100))
+```
+
+
+# Wrapping up
+
+## What we did today
+
+Key requirements for RDD
+
+- Treatment assignment determined by hard threshold on running variable
+- Running variable is observed
+- Potential outcomes vary continuously with running variable
+
+RDD in practice
+
+- Linear relationship between R and Y $\leadsto$ linear RDD
+- Nonlinear relationship $\leadsto$ (usually) RDD within bandwidth
+
+Next time: Hall's data, bandwidth selection, (maybe) fuzzy RDD
