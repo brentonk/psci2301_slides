@@ -377,7 +377,7 @@ tibble(r = seq(-2, 2, length.out = 201)) |>
 ```
 
 ## An invalid regression discontinuity model {visibility="uncounted"}
-python
+
 ```{r}
 #| echo: false
 tibble(r = seq(-2, 2, length.out = 201)) |>

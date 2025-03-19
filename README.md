@@ -23,4 +23,5 @@ All slides are written in Quarto using [my fork](https://github.com/brentonk/qua
 | Instrumental variables in theory   | 2025-03-03 | [PDF](/08_01_instruments_theory/08_01_instruments_theory.pdf)           | [QMD](/08_01_instruments_theory/08_01_instruments_theory.qmd)           |
 | Instrumental variables in practice | 2025-03-05 | [PDF](/08_02_instruments_practice/08_02_instruments_practice.pdf)       | [QMD](/08_02_instruments_practice/08_02_instruments_practice.qmd)       |
 | Regression discontinuity designs   | 2025-03-17 | [PDF](/09_01_rdd_theory/09_01_rdd_theory.pdf)                           | [QMD](/09_01_rdd_theory/09_01_rdd_theory.qmd)                           |
+| RDD in practice                    | 2025-03-19 | [PDF](/09_02_rdd_practice/09_02_rdd_practice.pdf)                       | [QMD](/09_02_rdd_practice/09_02_rdd_practice.qmd)                       |
 

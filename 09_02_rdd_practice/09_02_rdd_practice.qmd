@@ -1,0 +1,430 @@
+---
+title: "RDD in practice"
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method: mathjax
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-03-19
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("09_02_rdd_practice/09_02_rdd_practice.qmd")
+library("here")
+library("tidyverse")
+library("RColorBrewer")
+library("broom")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5, width = 100)
+
+## Sane ggplot defaults
+theme_set(theme_bw(base_size = 16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+\newcommand{\ub}[2]{\underbrace{#1}_{\mathclap{\text{#2}}}}
+\newcommand{\ob}[2]{\overbrace{#1}^{\mathclap{\text{#2}}}}
+
+## Recap
+
+Last time: Estimating treatment effects by [regression discontinuity]{.alert}
+
+- Another method for observational data w/ unobserved confounders
+
+- Key assumptions
+  1. Treatment assignment determined by sharp cutoff in continuous "running variable"
+  2. No major dissimilarities in other background characteristics just below/above the cutoff
+
+- Linear relationship between running and outcome: linear RDD
+
+- Nonlinear relationship: polynomial RDD, or local linear RDD w/in bandwidth
+
+## Today's agenda
+
+Working with RDD in practice, using Hall's data
+
+1. Initial visual inspections
+
+2. Estimating RDD models
+   - Linear RDD via `lm()`
+   - Polynomial RDD via `lm()`
+   - Automatic bandwidth selection via `rdrobust()`
+
+3. Assessing balance
+
+
+# Effects of ideological extremism in House races
+
+## Research design
+
+What is the effect of ideological extremism on a candidate's election results?
+
+**Population:** US House races, 1980--2010
+
+- Only those with a competitive primary
+- ...and a discernible ideological difference b/w primary candidates
+
+**Outcome:** Vote share in general election
+
+**Treatment group:** Ideological extremists
+
+**Comparison group:** Ideological moderates
+
+## Measuring primary candidate ideology
+
+Typically measure legislator ideology by how they voted on bills
+
+![](green_censure.png){fig-align="center"}
+
+## Measuring primary candidate ideology
+
+Problem: Don't observe bill votes for candidates who weren't elected
+
+Hall's solution: Measure ideology by [donation]{.underline} patterns
+
+- Lots of data: All donations of $200+ must be publicly reported
+- Key assumption: Donors favor ideologically close candidates
+
+. . .
+
+Rough outline of how this works:
+
+1. Measure ideology of incumbents the usual way
+2. Measure donor ideology via which incumbents they contribute to
+3. Measure candidate ideology as weighted average of donor ideology
+
+## Accessing Hall's data
+
+Can download manually from <https://www.andrewbenjaminhall.com/>
+
+...or can copy-paste this:
+
+```{r}
+#| cache: true
+library("archive")
+library("haven")
+url_hall <- "https://www.dropbox.com/s/1o0lrqemdlyh7ha/Hall_Extremist_Primaries_APSR_Replication.zip?dl=1"
+con <- archive_read(url_hall, file = "primary_analysis.dta")
+df_hall <- read_dta(con)
+```
+
+## Hall's data
+
+```{r}
+# Only use races w/ above-median ideological difference
+# (as in Hall's main analysis)
+df_hall <- df_hall |>
+  filter(absdist > median(absdist)) |>
+  relocate(state, dist, year, dem, dv, rv, treat)
+
+df_hall
+```
+
+## Looking at the data
+
+Plot raw data to assess linearity + discontinuity
+
+```{r}
+#| echo: false
+df_hall |>
+  ggplot(aes(x = rv, y = dv, group = treat)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point() +
+  geom_smooth() +
+  labs(
+    x = "Running variable: Extremist candidate's margin in primary",
+    y = "General election vote share"
+  )
+```
+
+## A closer look at the data
+
+Restricting to when extremist won/lost by 5% or less
+
+```{r}
+#| echo: false
+df_hall |>
+  filter(abs(rv) <= 0.05) |>
+  ggplot(aes(x = rv, y = dv, group = treat)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  labs(
+    x = "Running variable: Extremist candidate's margin in primary",
+    y = "General election vote share"
+  )
+```
+
+## Polynomial RDD
+
+```{r}
+#| echo: false
+options(width = 42)
+```
+
+:::: {.columns}
+::: {.column}
+```{r}
+fit_cubic <- lm(
+  dv ~ treat + rv + I(rv^2) + I(rv^3),
+  data = df_hall
+)
+tidy(fit_cubic)
+```
+:::
+::: {.column}
+```{r}
+fit_quintic <- lm(
+  dv ~ treat + rv + I(rv^2) + I(rv^3) +
+    I(rv^4) + I(rv^5),
+  data = df_hall
+)
+tidy(fit_quintic)
+```
+:::
+::::
+
+## Checking fit of polynomial RDD: Cubic model
+
+```{r}
+#| echo: false
+fit_cubic |>
+  augment(newdata = df_hall) |>
+  ggplot(aes(x = rv, group = treat)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point(aes(y = dv)) +
+  geom_line(aes(y = .fitted), color = "blue", size = 1) +
+  labs(
+    x = "Running variable: Extremist candidate's margin in primary",
+    y = "General election vote share"
+  )
+```
+
+## Checking fit of polynomial RDD: Quintic model
+
+```{r}
+#| echo: false
+fit_quintic |>
+  augment(newdata = df_hall) |>
+  ggplot(aes(x = rv, group = treat)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point(aes(y = dv)) +
+  geom_line(aes(y = .fitted), color = "blue", size = 1) +
+  labs(
+    x = "Running variable: Extremist candidate's margin in primary",
+    y = "General election vote share"
+  )
+```
+
+## Local linear RDD with manual bandwidth choice
+
+```{r}
+#| echo: false
+options(width = 90)
+```
+
+```{r}
+fit_local_linear <- lm(
+  dv ~ treat * rv,
+  data = df_hall,
+  subset = margin < 0.05
+)
+tidy(fit_local_linear)
+```
+
+## Considerations in bandwidth choice
+
+We face a **bias-variance** tradeoff in selecting a bandwidth
+
+Narrow bandwidth
+
+- Low bias: Only comparing very similar observations
+- High variance: Throwing away lots of data
+
+Wide bandwidth
+
+- High(er) bias: Comparing observations with more baseline diffs
+- Low(er) variance: Using greater fraction of the data
+
+Statisticians have developed methods to balance these two considerations
+
+## Choosing bandwidth automatically
+
+Using the **rdrobust** package:
+
+```{r}
+# install.packages("rdrobust") if not installed already
+library("rdrobust")
+```
+
+`rdrobust()` function automatically estimates bandwidth + corrects SEs
+
+```{r}
+fit_rdr <- rdrobust(y = df_hall$dv, x = df_hall$rv, c = 0)
+```
+
+In here we'll just use the defaults, but there are **lots** of options to check before using `rdrobust()` for production/publication work
+
+## Choosing bandwidth automatically
+
+Sadly our friend `tidy()` doesn't work for `rdrobust()` output
+
+```{r}
+summary(fit_rdr)
+```
+
+## Checking balance
+
+Key RDD assumption: Obs essentially similar on either side of threshold
+
+Want to verify there's **no** discontinuity for observed confounders
+
+Confounding variables in Hall's analysis:
+
+- `winner_female`: Was the winning candidate female?
+- `inc_winner`: Was the winning candidate an incumbent?
+- `qual`: Did the winning candidate have prior political experience?
+- `winner_share`: How big was the winning candidate's fundraising (dis)advantage?
+
+## Balance check regressions
+
+```{r}
+# Extract optimal bandwidth from dv analysis
+bandwidth <- fit_rdr$bws[1]
+df_hall_subset <- filter(df_hall, abs(rv) <= bandwidth)
+
+# Local linear RDD for each confounding variable
+fit_fem <- lm(winner_female ~ treat * rv, data = df_hall_subset)
+fit_inc <- lm(inc_winner ~ treat * rv, data = df_hall_subset)
+fit_exp <- lm(qual ~ treat * rv, data = df_hall_subset)
+fit_don <- lm(winner_share ~ treat * rv, data = df_hall_subset)
+```
+
+## Balance check regressions
+
+```{r}
+#| echo: false
+options(width = 45)
+```
+
+For once we want **high** p-values
+
+:::: {.columns}
+::: {.column}
+```{r}
+tidy(fit_fem) |> filter(term == "treat")
+tidy(fit_inc) |> filter(term == "treat")
+```
+:::
+::: {.column}
+```{r}
+tidy(fit_exp) |> filter(term == "treat")
+tidy(fit_don) |> filter(term == "treat")
+```
+:::
+::::
+
+## Visual balance check: Gender
+
+```{r}
+#| echo: false
+df_hall_subset |>
+  ggplot(aes(x = rv, y = winner_female, group = treat)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point(position = position_jitter(height = 0.05)) +
+  geom_smooth(method = "lm") +
+  labs(
+    x = "Running variable: Extremist candidate's margin in primary",
+    y = "Was winning candidate female?"
+  )
+```
+
+## Visual balance check: Incumbency
+
+```{r}
+#| echo: false
+df_hall_subset |>
+  ggplot(aes(x = rv, y = inc_winner, group = treat)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point(position = position_jitter(height = 0.05)) +
+  geom_smooth(method = "lm") +
+  labs(
+    x = "Running variable: Extremist candidate's margin in primary",
+    y = "Was winning candidate an incumbent?"
+  )
+```
+
+## Visual balance check: Experience
+
+```{r}
+#| echo: false
+df_hall_subset |>
+  ggplot(aes(x = rv, y = qual, group = treat)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point(position = position_jitter(height = 0.05)) +
+  geom_smooth(method = "lm") +
+  labs(
+    x = "Running variable: Extremist candidate's margin in primary",
+    y = "Was winning candidate a past officeholder?"
+  )
+```
+
+## Visual balance check: Fundraising
+
+```{r}
+#| echo: false
+df_hall_subset |>
+  ggplot(aes(x = rv, y = winner_share, group = treat)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_point(position = position_jitter(height = 0.05)) +
+  geom_smooth(method = "lm") +
+  labs(
+    x = "Running variable: Extremist candidate's margin in primary",
+    y = "Winning candidate's share of primary donations"
+  )
+```
+
+
+# Wrapping up
+
+## What we did today
+
+RDD in practice
+
+1. Starting point: Look at the data!
+   - Is there an evident discontinuity in the raw data?
+   - How close to the threshold is the relationship roughly linear?
+
+2. Many different ways to estimate RDDs
+   - Linear and polynomial via `lm()`
+   - Automatic bandwidth selection via `rdrobust()`
+   - Use multiple methods to see if results are broadly consistent
+
+3. Assessing balance visually and with statistical tests
+   - Ideal is no discontinuity in confounders
+
+## Next week
+
+[Time to work on your paper drafts]{.alert} --- no class sessions next week
+
+But you **must** sign up for a half hour meeting with me
+
+- Use the Google Sheet linked on Brightspace
+
+The more progress you've made beforehand, the better I'll be able to help you
