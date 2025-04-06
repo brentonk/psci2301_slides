@@ -1,0 +1,790 @@
+---
+title: "Differences in differences"
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method: mathjax
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-03-31
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("10_01_did_theory/10_01_did_theory.qmd")
+library("here")
+library("tidyverse")
+library("cowplot")
+library("RColorBrewer")
+library("broom")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5, width = 100)
+
+## Sane ggplot defaults
+theme_set(theme_cowplot(16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+\newcommand{\ub}[2]{\underbrace{#1}_{\mathclap{\text{#2}}}}
+\newcommand{\ob}[2]{\overbrace{#1}^{\mathclap{\text{#2}}}}
+
+## Recap
+
+Last time we met: [Regression discontinuity designs]{.alert}
+
+- Method for observational data with unobserved confounders
+- Key assumptions
+  - Treatment status determined by cutoff in "running variable"
+  - No discontinuities in confounders/other background characteristics near the treatment cutoff
+- Application: Estimating effects of candidate extremism
+  - RDD on margin in primaries b/w extremist and moderate
+  - Assumes districts where extremist *barely* wins primary not very different from those where moderate barely wins
+  - Estimate sizable advantage for moderates in general election
+
+## Today's agenda
+
+[Difference in differences]{.alert} (DiD):
+
+- Another method for observational data w/ unobserved confounders
+- Data requirements
+  - Observe same units over time
+  - Some units never treated, others sometimes treated
+- How to estimate the causal effect of treatment?
+  1. Calculate diff over time among sometimes-treated obs
+  2. Calculate diff over time among never-treated obs
+  3. Subtract (2) from (1)
+- Relies on [parallel trends]{.alert} assumption: if treated units had not been treated, would have had same average trend over time as untreated ones
+
+
+# Motivating question: Border walls and crime
+
+## Causal question
+
+:::: {.columns}
+::: {.column}
+What is the effect of physical barriers on smuggling across borders?
+
+Context --- early-2000s barriers b/w Israel and West Bank
+
+- Primary motivation: deter suicide attacks
+- But most car theft at time also went to West Bank
+- Did wall construction reduce car theft, or just displace it?
+:::
+::: {.column}
+![](ggw_fig2.png){fig-align="center"}
+:::
+::::
+
+## Difficulties for causal inference
+
+Obviously can't randomize $\leadsto$ experimental study impossible
+
+. . .
+
+What about regression/matching?
+
+- Need to control for all confounders
+- Not realistic here: would need everything that affects car theft rates + proximity to border wall construction
+
+. . .
+
+Other strategies?
+
+- IV: hard to think of as-if random variation in wall construction, let alone one that would satisfy exclusion restriction
+- RDD: no running variable that determines treatment status
+
+## Getmansky, Grossman, Wright's approach
+
+Three groups to compare:
+
+- North: barrier built in early 2000s
+- South: barrier not yet completed in early 2000s
+- Outer: no barrier, stolen cars not going to West Bank
+
+Observe car theft rates in each place [before and after]{.underline} 2002 construction
+
+. . .
+
+[Difference in differences:]{.alert}
+
+- Calculate pre-2002 vs post-2002 difference in theft in each region
+- Compare these differences to draw causal inferences
+
+
+# Differences in differences
+
+## Key ingredients
+
+Standard causal model, with two changes
+
+1. We observe each unit at two times: $t = 1$ and $t = 2$
+2. Units are only treated at time $t = 2$, and only some of them
+
+. . .
+
+Potential outcomes in first period: $Y_{0i}^{1}$, $Y_{1i}^1$
+
+Potential outcomes in second period: $Y_{0i}^2$, $Y_{1i}^2$
+
+Treatment group indicator: $D_i \in \{0, 1\}$
+
+* $D_i = 0$ $\leadsto$ control both periods
+* $D_i = 1$ $\leadsto$ control period 1, treatment period 2
+
+## What we observe (and don't)
+
+```{r}
+#| echo: false
+df_did <- tribble(
+  ~ time, ~ group, ~ avg,
+  "t = 1", "control", 30,
+  "t = 2", "control", 40,
+  "t = 1", "treatment", 45,
+  "t = 2", "treatment", 75
+)
+df_did_unobs <- tribble(
+  ~ time, ~ group, ~ avg, ~ lbl,
+  "t = 2", "treatment", 55, "E[Y_0i^2]"
+)
+
+df_did |>
+  filter(time == "t = 1") |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  scale_x_discrete("Time", limits = c("t = 1", "t = 2")) +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  theme_minimal_hgrid(16)
+```
+
+## What we observe (and don't) {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  theme_minimal_hgrid(16)
+```
+
+## What we observe (and don't) {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("text", x = 2, y = 55, label = "Potential outcome", size = 5, hjust = 1.1) +
+  annotate("text", x = 2, y = 52, label = "if not treated", size = 5, hjust = 1.15) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  theme_minimal_hgrid(16)
+```
+
+## What we observe (and don't) {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("text", x = 2, y = 55, label = "Potential outcome", size = 5, hjust = 1.1) +
+  annotate("text", x = 2, y = 52, label = "if not treated", size = 5, hjust = 1.15) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  theme_minimal_hgrid(16)
+```
+
+## Bad option #1: Before-and-after comparison
+
+What if we ignored control, just did before-and-after with treated?
+
+Before-and-after estimator:
+$$
+\hat{\tau} = \E[Y_i^2 \mid D_i = 1] - \E[Y_i^1 \mid D_i = 1]
+$$
+
+. . .
+
+Problem: Must assume would have been no change if not treated
+
+Only equals ATT if $\E[Y_{0i}^2 \mid D_i = 1] = \E[Y_{0i}^1 \mid D_i = 1]$
+
+## Bad option #1: Before-and-after comparison
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  theme_minimal_hgrid(16)
+```
+
+## Bad option #1: Before-and-after comparison {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group, alpha = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  scale_alpha_manual(values = c("control" = 0.1, "treatment" = 1)) +
+  theme_minimal_hgrid(16)
+```
+
+## Bad option #1: Before-and-after comparison {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group, alpha = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  annotate("segment", x = 1.9, xend = 1.9, y = 45, yend = 75, color = "red") +
+  annotate("segment", x = 1.05, xend = 1.9, y = 45, yend = 45, color = "red") +
+  annotate("segment", x = 1.9, xend = 1.95, y = 75, yend = 75, color = "red") +
+  annotate("text", x = 1.9, y = 62, label = "Estimate", color = "red", size = 5, hjust = 1.1) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  scale_alpha_manual(values = c("control" = 0.1, "treatment" = 1)) +
+  theme_minimal_hgrid(16)
+```
+
+## Bad option #2: Period 2 comparison
+
+What if we ignored $t = 1$, just compared treated to control at $t = 2$?
+
+Period 2 difference of means estimator:
+$$
+\hat{\tau} = \E[Y_i^2 \mid D_i = 1] - \E[Y_i^2 \mid D_i = 0]
+$$
+
+. . .
+
+Problem: Must assume the usual independence condition!
+
+Only equals ATT if $\E[Y_{0i}^2 \mid D_i = 0] = \E[Y_{0i}^2 \mid D_i = 1]$
+
+## Bad option #2: Period 2 comparison
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  theme_minimal_hgrid(16)
+```
+
+## Bad option #2: Period 2 comparison {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group, alpha = time), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  scale_alpha_manual(values = c("t = 1" = 0.1, "t = 2" = 1)) +
+  guides(alpha = "none") +
+  theme_minimal_hgrid(16)
+```
+
+## Bad option #2: Period 2 comparison {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group, alpha = time), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  annotate("segment", x = 1.9, xend = 1.9, y = 40, yend = 75, color = "red") +
+  annotate("segment", x = 1.9, xend = 1.95, y = 75, yend = 75, color = "red") +
+  annotate("segment", x = 1.9, xend = 1.95, y = 40, yend = 40, color = "red") +
+  annotate("text", x = 1.9, y = 57.5, label = "Estimate", color = "red", size = 5, hjust = 1.1) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  scale_alpha_manual(values = c("t = 1" = 0.1, "t = 2" = 1)) +
+  guides(alpha = "none") +
+  theme_minimal_hgrid(16)
+```
+
+## A better option: Difference in differences
+
+We need a good guess about $\E[Y_{0i}^2 \mid D_i = 1]$
+
+- Avg t = 2 outcome among treated obs if they hadn't been treated
+
+. . .
+
+Avg t = 1 outcome among treated obs doesn't work
+
+- Could have been change over time even if untreated
+
+. . .
+
+Avg t = 2 outcome among untreated obs doesn't work
+
+- Could be systematic differences due to non-random assignment
+
+. . .
+
+But we can **combine** these to get a better guess
+
+## A better option: Difference in differences
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  theme_minimal_hgrid(16)
+```
+
+## A better option: Difference in differences {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  geom_segment(
+    data = tibble(
+      x = c(1.9, 1.05, 1.9),
+      xend = c(1.9, 1.9, 1.95),
+      y = c(30, 30, 40),
+      yend = c(40, 30, 40),
+      group = "control"
+    ),
+    aes(x = x, xend = xend, y = y, yend = yend, color = group)
+  ) +
+  geom_text(
+    data = tibble(
+      x = c(1.85, 1.9),
+      y = c(62, 35),
+      label = c("treatment diff", "control diff"),
+      group = c("treatment", "control")
+    ) |> filter(group == "control"),
+    aes(x = x, y = y, label = label, color = group),
+    size = 5,
+    hjust = 1.1
+  ) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  theme_minimal_hgrid(16)
+```
+
+## A better option: Difference in differences {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  geom_segment(
+    data = tibble(
+      x = c(1.9, 1.05, 1.9),
+      xend = c(1.9, 1.9, 1.95),
+      y = c(30, 30, 40),
+      yend = c(40, 30, 40),
+      group = "control"
+    ),
+    aes(x = x, xend = xend, y = y, yend = yend, color = group)
+  ) +
+  geom_segment(
+    data = tibble(
+      x = c(1.85, 1.05, 1.85),
+      xend = c(1.85, 1.85, 1.95),
+      y = c(45, 45, 75),
+      yend = c(75, 45, 75),
+      group = "treatment"
+    ),
+    aes(x = x, xend = xend, y = y, yend = yend, color = group)
+  ) +
+  geom_text(
+    data = tibble(
+      x = c(1.85, 1.9),
+      y = c(62, 35),
+      label = c("treatment diff", "control diff"),
+      group = c("treatment", "control")
+    ),
+    aes(x = x, y = y, label = label, color = group),
+    size = 5,
+    hjust = 1.1
+  ) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  theme_minimal_hgrid(16)
+```
+
+## A better option: Difference in differences {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  geom_segment(
+    data = tibble(
+      x = c(1.9, 1.05, 1.9),
+      xend = c(1.9, 1.9, 1.95),
+      y = c(30, 30, 40) + 15,
+      yend = c(40, 30, 40) + 15,
+      group = "control"
+    ),
+    aes(x = x, xend = xend, y = y, yend = yend, color = group)
+  ) +
+  geom_segment(
+    data = tibble(
+      x = c(1.85, 1.05, 1.85),
+      xend = c(1.85, 1.85, 1.95),
+      y = c(45, 45, 75),
+      yend = c(75, 45, 75),
+      group = "treatment"
+    ),
+    aes(x = x, xend = xend, y = y, yend = yend, color = group)
+  ) +
+  geom_text(
+    data = tibble(
+      x = c(1.85, 1.9),
+      y = c(62, 50),
+      label = c("treatment diff", "control diff"),
+      group = c("treatment", "control")
+    ),
+    aes(x = x, y = y, label = label, color = group),
+    size = 5,
+    hjust = 1.1
+  ) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  theme_minimal_hgrid(16)
+```
+
+## A better option: Difference in differences {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  geom_segment(
+    data = tibble(
+      x = c(1.9, 1.05, 1.9),
+      xend = c(1.9, 1.9, 1.95),
+      y = c(30, 30, 40) + 15,
+      yend = c(40, 30, 40) + 15,
+      group = "control"
+    ),
+    aes(x = x, xend = xend, y = y, yend = yend, color = group),
+    alpha = 0.5
+  ) +
+  geom_segment(
+    data = tibble(
+      x = c(1.85, 1.05, 1.85),
+      xend = c(1.85, 1.85, 1.95),
+      y = c(45, 45, 75),
+      yend = c(75, 45, 75),
+      group = "treatment"
+    ),
+    aes(x = x, xend = xend, y = y, yend = yend, color = group),
+    alpha = 0.5
+  ) +
+  geom_segment(
+    data = tibble(
+      x = c(1.75, 1.75, 1.75),
+      xend = c(1.75, 1.8, 1.8),
+      y = c(55, 55, 75),
+      yend = c(75, 55, 75)
+    ),
+    aes(x = x, y = y, xend = xend, yend = yend),
+    color = "red"
+  ) +
+  annotate("text", x = 1.75, y = 65, label = "Estimate", size = 5, color = "red", hjust = 1.1) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  theme_minimal_hgrid(16)
+```
+
+## Difference in differences
+
+The [difference in differences]{.alert} estimate of the ATT:
+$$
+\begin{aligned}
+\hat{\tau}
+&= \left\{ \E[Y_i^2 \mid D_i = 1] - \E[Y_i^1 \mid D_i = 1] \right\} \\
+&\quad - \left\{ \E[Y_i^2 \mid D_i = 0] - \E[Y_i^1 \mid D_i = 0] \right\}
+\end{aligned}
+$$
+
+. . .
+
+Key assumption that makes this work: [parallel trends]{.alert}
+
+- If not treated, treatment group would have had same [change]{.underline} as control
+- Formal condition:
+  $$
+  \begin{multlined}
+  \textcolor{red}{\E[Y_{0i}^2 \mid D_i = 1]} - \E[Y_{0i}^1 \mid D_i = 1]
+  \\ = \E[Y_{0i}^2 \mid D_i = 0] - \E[Y_{0i}^1 \mid D_i = 0]
+  \end{multlined}
+  $$
+
+## The parallel trends assumption
+
+```{r}
+#| echo: false
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  geom_point(
+    data = df_did_unobs,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  geom_segment(
+    data = tibble(
+      x = c(1.05, 1.05),
+      xend = c(1.95, 1.95),
+      y = c(30, 45),
+      yend = c(40, 55),
+      group = c("control", "treatment")
+    ),
+    aes(x = x, y = y, xend = xend, yend = yend, color = group)
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 55, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 55, yend = 55) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 65, label = "ATT", size = 5) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  ggtitle("Parallel trends holds, DiD is valid") +
+  theme_minimal_hgrid(16)
+```
+
+## The parallel trends assumption {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_did_unobs_bad <- tribble(
+  ~ time, ~ group, ~ avg, ~ lbl,
+  "t = 2", "treatment", 65, "E[Y_0i^2]"
+)
+df_did |>
+  ggplot(aes(x = time, y = avg)) +
+  geom_point(aes(color = group, shape = group), size = 5) +
+  geom_point(
+    data = df_did_unobs_bad,
+    aes(color = group),
+    shape = 24,
+    size = 5
+  ) +
+  geom_segment(
+    data = tibble(
+      x = c(1.05, 1.05),
+      xend = c(1.95, 1.95),
+      y = c(30, 45),
+      yend = c(40, 65),
+      group = c("control", "treatment")
+    ),
+    aes(x = x, y = y, xend = xend, yend = yend, color = group)
+  ) +
+  annotate("segment", x = 2.1, xend = 2.1, y = 65, yend = 75) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 65, yend = 65) +
+  annotate("segment", x = 2.05, xend = 2.1, y = 75, yend = 75) +
+  annotate("text", x = 2.17, y = 70, label = "ATT", size = 5) +
+  scale_x_discrete("Time") +
+  scale_y_continuous("Average outcome", limits = c(20, 80)) +
+  ggtitle("Parallel trends fails, DiD is invalid") +
+  theme_minimal_hgrid(16)
+```
+
+## Assessing parallel trends
+
+Not directly testable, as we can't observe $\E[Y_{0i}^2 \mid D_i = 1]$
+
+How to convince yourself + others this assumption is valid?
+
+- Know your data!
+  - Why did only some observations get the treatment?
+  - What accounts for differences b/w treatment and control at t = 1?
+  - Any other changes at same time that'd only affect treatment group?
+
+- If data available for earlier periods, do trends look parallel?
+
+## Assessing parallel trends in GGW
+
+![](ggw_fig3.png){fig-align="center"}
+
+# Wrapping up
+
+## What we did today
+
+The difference in differences estimator:
+
+- Data requirements
+  - Observe same units over time
+  - Some units never treated, others sometimes treated
+- Method to estimate the ATT
+  1. Calculate diff over time among sometimes-treated obs
+  2. Calculate diff over time among never-treated obs
+  3. Subtract (2) from (1)
+- Parallel trends assumption
+  - If treated units had not been treated, would have had same average trend over time as untreated ones
+  - Not directly testable (fundamental problem of causal inference)
+
+## Plan for the rest of the semester
+
+- Weds 4/2: **No class**
+- Mon 4/7: DiD in practice
+- Weds 4/9: A crash course on synthetic control
+- Mon 4/14: Presentations of final projects
+  - Should be 10-12 minutes each
+  - Main points to hit: your causal question, your data, how you identify a causal effect, your main findings
+- Weds 4/16: Likely no class
+

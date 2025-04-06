@@ -1,0 +1,373 @@
+---
+title: "Implementing differences in differences"
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method: mathjax
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-04-07
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("10_02_did_practice/10_02_did_practice.qmd")
+library("here")
+library("tidyverse")
+library("cowplot")
+library("RColorBrewer")
+library("broom")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5, width = 100)
+
+## Sane ggplot defaults
+theme_set(theme_cowplot(16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+\newcommand{\ub}[2]{\underbrace{#1}_{\mathclap{\text{#2}}}}
+\newcommand{\ob}[2]{\overbrace{#1}^{\mathclap{\text{#2}}}}
+
+## Recap
+
+Last time: [Differences in differences]{.alert} to estimate causal effects
+
+- Data requirements
+  - Observe same units over time
+  - Some units never treated, others sometimes treated
+- Method to estimate the ATT
+  1. Calculate diff over time among sometimes-treated obs
+  2. Calculate diff over time among never-treated obs
+  3. Subtract (2) from (1)
+- Parallel trends assumption
+  - If treated units had not been treated, would have had same average trend over time as untreated ones
+  - Not directly testable (fundamental problem of causal inference)
+
+## Today's agenda
+
+1. Using regression to estimate DiD
+
+2. DiD in practice with the Getmansky, Grossman, Wright replication data
+
+3. Wrap up with comparison of all the estimators we've studied
+
+
+# Regression for diff in diff
+
+## Things we already know about regression
+
+If $Z_i$ is binary and we run the bivariate regression $$\E[Y_i \mid Z_i] = \alpha + \beta Z_i$$
+
+...we get a difference in means.
+
+ 
+
+| Term      | Notation | Interpretation                                     |
+| :-------- | :------: | :------------------------------------------------- |
+| Intercept | $\alpha$ | average outcome when $Z_i = 0$                     |
+| Slope     | $\beta$  | difference in averages b/w $Z_i = 1$ and $Z_i = 0$ |
+
+## Things we already know about regression
+
+If $Z_i$ is binary and we run the interacted regression $$\E[Y_i \mid X_i, Z_i] = \alpha + \beta_1 X_i + \beta_2 Z_i + \beta_3 (X_i \times Z_i)$$
+
+... we get separate regression lines for the $Z_i = 0$ and $Z_i = 1$ groups.
+
+ 
+
+
+| Term             | Notation  | Interpretation                               |
+| :--------------- | :-------: | :------------------------------------------- |
+| Intercept        | $\alpha$  | intercept of X-Y relationship when $Z_i = 0$ |
+| X coefficient    | $\beta_1$ | slope of X-Y relationship when $Z_i = 0$     |
+| Z coefficient    | $\beta_2$ | shift in intercept when $Z_i = 1$            |
+| Interaction term | $\beta_3$ | shift in slope when $Z_i = 1$                |
+
+## Regression for difference in differences
+
+For each observation $i$ in time period $t$, code the variables:
+
+- $Y_{i, t}$: observed outcome for $i$ at time $t$
+- $D_i$: is $i$ in the group that will get treated? (same across time periods)
+- $A_t$: has the treatment been applied yet? (same across observations)
+
+. . .
+
+$$\E[Y_{i, t} \mid D_i, A_t] = \alpha + \beta_1 D_i + \beta_2 A_t + \beta_3 (D_i \times A_t)$$
+
+- $\alpha$: Pre-treatment avg in never-treated group
+- $\beta_1$: Difference between groups in pre-treatment period
+- $\beta_2$: Shift in post-treatment avg for never-treated group
+- $\beta_3$: [Difference in differences estimate]{.alert}
+
+## Why the interaction term gives the DiD estimate
+
+$$
+\begin{aligned}
+DiD
+&= \text{diff over time in treated group} \\
+&\qquad -\: \text{diff over time in untreated group} \\
+&= \left\{\E[Y_{i, t} \mid D_i = 1, A_t = 1] - \E[Y_{i, t} \mid D_i = 1, A_t = 0]\right\} \\
+&\qquad - \left\{\E[Y_{i, t} \mid D_i = 0, A_t = 1] - \E[Y_{i, t} \mid D_i = 0, A_t = 0]\right\} \\
+&= \left[ \left(\alpha + \beta_1 + \beta_2 + \beta_3 \right) - \left(\alpha + \beta_1 \right) \right] - \left[ (\alpha + \beta_2) - \alpha \right] \\
+&= (\beta_2 + \beta_3) - \beta_2 \\
+&= \beta_3.
+\end{aligned}
+$$
+
+## Advantages of the regression approach
+
+1. Can accommodate multiple time periods before/after
+   - Just code $A_t = 0$ before treatment administered, $A_t = 1$ after
+   - Include time trend (or dummies) to account for baseline changes:
+     $$
+     \E[Y_{i, t} \mid \cdots] = \alpha + \beta_1 D_i + \beta_2 A_t + \beta_3 (D_i \times A_t) + \ub{\beta_4 t}{linear time trend}
+     $$
+
+2. Can control for observable confounders
+   - Include them in regression equation as normal:
+     $$
+     \E[Y_{i, t} \mid \cdots] = \alpha + \beta_1 D_i + \beta_2 A_t + \beta_3 (D_i \times A_t) + \beta_4 X_{i, t}
+     $$
+   - Still need to avoid post-treatment bias, may need to use previous period measurements
+
+3. Easier to calculate standard errors
+
+
+# Application to border walls and smuggling
+
+## Getmansky, Grossman, Wright data
+
+```{r}
+#| echo: false
+library("archive")
+library("haven")
+```
+
+```{r}
+#| cache: true
+#| echo: false
+df_ggw_raw <- archive_read(
+  "https://www.nowpublishers.com/article/details/supplementary-info/100.00018094_supp.zip",
+  file = "18094_supp/main_panel.dta"
+) |>
+  read_dta()
+```
+
+```{r}
+#| echo: false
+df_ggw <- df_ggw_raw |>
+  filter(sample1 == 1) |>
+  mutate(
+    locality_type = case_when(
+      Treatment == 1 ~ "North",
+      TS == 1 ~ "South",
+      TRUE ~ "Outer"
+    ),
+    locality_type = factor(locality_type, levels = c("Outer", "South", "North")),
+    .before = 4
+  ) |>
+  mutate(MonthRun = MonthRun + 23)
+```
+
+```{r}
+df_ggw
+```
+
+## Assessing parallel trends
+
+Code to replicate GGW's Figure 3
+
+```{r}
+#| output-location: slide
+df_ggw |>
+  # Calculate theft as proportion of pretreatment mean in each group
+  group_by(locality_type) |>
+  mutate(
+    pretreat_mean = mean(carthefts_pc[MonthRun < 21], na.rm = TRUE),
+    theft_prop = carthefts_pc / pretreat_mean
+  ) |>
+  # Calculate avg theft as prop of pretreat mean by group and month
+  group_by(MonthRun, locality_type) |>
+  summarize(avg_theft_prop = mean(theft_prop, na.rm = TRUE)) |>
+  ggplot(aes(x = MonthRun, y = avg_theft_prop)) +
+  geom_smooth(aes(linetype = locality_type, color = locality_type), span = 0.5, se = FALSE) +
+  geom_vline(xintercept = 21) +
+  labs(
+    title = "Replication of GGW's Figure 3",
+    x = "Month of Sample",
+    y = "Avg car theft, proportion of pretreat avg"
+  )
+```
+
+## Diff in diff "by hand"
+
+```{r}
+df_ggw |>
+  group_by(locality_type, PT) |>
+  summarize(theft = mean(carthefts_pc, na.rm = TRUE)) |>
+  summarize(theft_diff = mean(theft[PT == 1] - theft[PT == 0])) |>
+  mutate(
+    vs_south = theft_diff - theft_diff[locality_type == "South"],
+    vs_outer = theft_diff - theft_diff[locality_type == "Outer"]
+  )
+```
+
+## Diff in diff via regression
+
+North vs South, no time trend or controls
+
+- Repeated obs of same locality $\leadsto$ cluster standard errors
+- `estimatr::lm_robust()` does this better than what I'd used before
+
+```{r}
+#| echo: false
+options(width = 45)
+```
+
+```{r}
+#| output-location: column
+library("estimatr")
+fit_simple <- lm_robust(
+  carthefts_pc ~ locality_type * PT,
+  data = df_ggw,
+  subset = locality_type != "Outer",
+  clusters = lcode
+)
+
+tidy(fit_simple) |>
+  as_tibble() |>
+  select(term, estimate, std.error)
+```
+
+## Diff in diff via regression
+
+Adding a linear time trend
+
+```{r}
+#| output-location: column
+fit_time_lin <- lm_robust(
+  carthefts_pc ~ locality_type * PT + MonthRun,
+  data = df_ggw,
+  subset = locality_type != "Outer",
+  clusters = lcode
+)
+
+tidy(fit_time_lin) |>
+  as_tibble() |>
+  select(term, estimate, std.error)
+```
+
+## Diff in diff via regression
+
+Adding time dummies
+
+```{r}
+#| output-location: column
+fit_time_dummy <- lm_robust(
+  carthefts_pc ~ locality_type * PT + factor(MonthRun),
+  data = df_ggw,
+  subset = locality_type != "Outer",
+  clusters = lcode
+)
+
+tidy(fit_time_dummy) |>
+  as_tibble() |>
+  select(term, estimate, std.error) |>
+  filter(!str_detect(term, "MonthRun"))
+```
+
+## Diff in diff via regression
+
+Adding controls: Population, urbanization, distance from Green Line (+ its square), whether local govt is a regional council
+
+```{r}
+#| output-location: column
+fit_time_full <- lm_robust(
+  carthefts_pc ~ locality_type * PT + factor(MonthRun) +
+    popN + urban + distance2greenline +
+    I(distance2greenline^2) + regional_council,
+  data = df_ggw,
+  subset = locality_type != "Outer",
+  clusters = lcode
+)
+
+tidy(fit_time_full) |>
+  as_tibble() |>
+  select(term, estimate, std.error) |>
+  filter(!str_detect(term, "MonthRun"))
+```
+
+## Diff in diff via regression
+
+Full model for North vs Outer
+
+```{r}
+#| output-location: column
+fit_vs_outer <- lm_robust(
+  carthefts_pc ~ locality_type * PT + factor(MonthRun) +
+    popN + urban + distance2greenline +
+    I(distance2greenline^2) + regional_council,
+  data = df_ggw,
+  subset = locality_type != "South",
+  clusters = lcode
+)
+
+tidy(fit_vs_outer) |>
+  as_tibble() |>
+  select(term, estimate, std.error) |>
+  filter(!str_detect(term, "MonthRun"))
+```
+
+## Interpretation
+
+![](ggw_tab1.png){fig-align="center"}
+
+- Barrier construction reduced car theft on average
+- ...but also displaced a lot from north to south
+
+# Wrapping up
+
+## Treatment effect estimation: Comparing the options
+
+| Method              | Key assumptions                                                    | Pros                                               | Cons                                                                             |
+| :------------------ | :----------------------------------------------------------------- | :------------------------------------------------- | :------------------------------------------------------------------------------- |
+| Difference in means | Random assignment                                                  | No fancy adjustments needed, small standard errors | Expensive or infeasible for many causal questions                                |
+| Matching            | All confounders measured                                           | Easy to calculate and to assess balance            | Many ways to match, curse of dimensionality, unlikely to measure all confounders |
+| Regression          | All confounders measured, linear relationship b/w them and outcome | Flexible, easy to interpret                        | Linear extrapolation can be problematic, unlikely to measure all confounders     |
+
+: {tbl-colwidths="[20, 20, 30, 30]"}
+
+## Treatment effect estimation: Comparing the options
+
+| Method                    | Key assumptions                                            | Pros                                                                            | Cons                                                                                                                              |
+| :------------------------ | :--------------------------------------------------------- | :------------------------------------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------- |
+| Instrumental variables    | Instrument not confounded, doesn't directly affect outcome | Can leverage random influence on nonrandom treatment                            | Assumptions very stringent, standard errors large if instrument weak, effective sample (compliers) not necessarily representative |
+| Regression discontinuity  | Treatment "jumps" with running variable, confounders don't | Easy to assess balance, easy to see where causal estimate comes from            | Possible sensitivity of estimate to bandwidth, effective sample (running $\approx$ 0) not necessarily representative              |
+| Difference in differences | Parallel trends in potential outcome if untreated          | Widely applicable with panel data, easy to see where causal estimate comes from | Requires repeated observation of same units, parallel trends sketchy if other things changing when treatment is switched on       |
+
+: {tbl-colwidths="[20, 20, 30, 30]"}
+
+## Plan for the rest of the semester
+
+- Weds 4/9: A crash course on synthetic control
+- Mon 4/14: Presentations of final projects
+  - Should be 10-12 minutes each
+  - Main points to hit: your causal question, your data, how you identify a causal effect, your main findings
+- Weds 4/16: Likely no class
+- Weds 4/23: Final paper and revision memo due
+
