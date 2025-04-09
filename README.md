@@ -26,4 +26,5 @@ All slides are written in Quarto using [my fork](https://github.com/brentonk/qua
 | RDD in practice                         | 2025-03-19 | [PDF](/09_02_rdd_practice/09_02_rdd_practice.pdf)                       | [QMD](/09_02_rdd_practice/09_02_rdd_practice.qmd)                       |
 | Differences in differences              | 2025-03-31 | [PDF](/10_01_did_theory/10_01_did_theory.pdf)                           | [QMD](/10_01_did_theory/10_01_did_theory.qmd)                           |
 | Implementing differences in differences | 2025-04-07 | [PDF](/10_02_did_practice/10_02_did_practice.pdf)                       | [QMD](/10_02_did_practice/10_02_did_practice.qmd)                       |
+| Synthetic control: A crash course       | 2025-04-09 | [PDF](/11_01_synthetic_control/11_01_synthetic_control.pdf)                       | [QMD](/11_01_synthetic_control/11_01_synthetic_control.qmd)                       |
 

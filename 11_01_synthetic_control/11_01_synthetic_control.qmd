@@ -1,0 +1,419 @@
+---
+title: "Synthetic control: A crash course"
+subtitle: "PSCI 2301: Quantitative Political Science II"
+format:
+  clean-revealjs:
+    echo: true
+html-math-method: mathjax
+author:
+  - name: "Prof. Brenton Kenkel"
+    email: brenton.kenkel@gmail.com
+    affiliations: Vanderbilt University
+date: 2025-04-09
+---
+
+## Quarto setup {visibility="hidden"}
+
+```{r setup}
+#| echo: false
+#| message: false
+here::i_am("11_01_synthetic_control/11_01_synthetic_control.qmd")
+library("here")
+library("tidyverse")
+library("cowplot")
+library("RColorBrewer")
+library("broom")
+
+## Only output five tibble rows by default
+options(tibble.print_min = 5, width = 100)
+
+## Sane ggplot defaults
+theme_set(theme_cowplot(16))
+```
+
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\V}{\mathbb{V}}
+\DeclareMathOperator{\C}{\mathbb{C}}
+\DeclareMathOperator{\avg}{avg}
+\DeclareMathOperator{\sd}{sd}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\cov}{cov}
+\DeclareMathOperator{\cor}{cor}
+\newcommand{\ub}[2]{\underbrace{#1}_{\mathclap{\text{#2}}}}
+\newcommand{\ob}[2]{\overbrace{#1}^{\mathclap{\text{#2}}}}
+
+
+## Today's agenda
+
+We've seen diff-in-diff for use with panel data
+
+But what if...
+
+- there's only one treated unit?
+- parallel trends is implausible?
+
+[Synthetic control]{.alert} designed to deal with this situation
+
+- Find units with similar pre-treatment trends in outcome
+- Use them to construct a "synthetic" counterfactual
+- Like a comparative case study, but with a statistical selection of comparison
+
+
+# Motivating question: Effects of nonproliferation agreements
+
+<!-- Load and clean data on nuclear capacity over time -->
+
+```{r}
+#| echo: false
+library("archive")
+```
+
+```{r}
+#| cache: true
+#| echo: false
+"https://cdn.cloud.prio.org/files/b8d60d7d-5049-411d-bc8c-0324655eff58/Smith%20and%20Spaniel_replication%20and%20OA.zip" |>
+  archive_read(file = "Smith & Spaniel_replication and OA/JPR_replication/synth_data_5.RData") |>
+  load()
+```
+
+```{r}
+#| echo: false
+df_nuclear <- synth_data |>
+  as_tibble() |>
+  filter(
+    year >= 1952,
+    year <= 1989,
+    !(ccode %in% c(713, 732, 160, 140, 2, 200, 365))
+  ) |>
+  mutate(upop = log1p(upop)) |>
+  select(
+    ccode = ccode,
+    state_abb = stateab,
+    year = year,
+    nuclear_capacity = Nu_means,
+    democracy = polity2,
+    log_urban_pop = upop,
+    log_gdp = lngdp,
+    openness = openness
+  ) |>
+  mutate(ccode = if_else(ccode == 740, 0, ccode)) |>
+  drop_na() |>
+  arrange(ccode, year)
+df_ccode_good <- df_nuclear |>
+  group_by(ccode) |>
+  summarize(good = all(1952:1989 %in% year)) |>
+  filter(good)
+df_nuclear <- df_nuclear |>
+  filter(ccode %in% !! df_ccode_good$ccode)
+```
+
+## Japan 1972: Background
+
+:::: {.columns}
+::: {.column}
+1964: China's first nuclear test
+
+1965: Japanese PM tells LBJ if China has nukes, so should Japan
+
+1968--1970: Non-Proliferation Treaty signing and ratification
+
+1972: US concedes control over Okinawa to induce Japan's compliance with NPT
+
+**Causal question:** Did this slow Japan's progress toward a weapon?
+:::
+::: {.column}
+![](okinawa.webp){fig-align="center"}
+:::
+::::
+
+## Japan's progress toward a nuclear weapon
+
+```{r}
+#| echo: false
+df_nuclear |>
+  filter(ccode == 0) |>
+  ggplot(aes(x = year, y = nuclear_capacity)) +
+  geom_line() +
+  geom_vline(aes(xintercept = 1972), color = "red") +
+  annotate(
+    "text",
+    x = 1972.5,
+    y = 1.0,
+    label = "1972: US transferred control of Okinawa",
+    hjust = 0,
+    color = "red",
+    size = 4.5
+  ) +
+  labs(
+    x = "Year",
+    y = "Japan's nuclear capacity"
+  )
+```
+
+## Problems for causal inference
+
+Before vs after: Japan's progress slowed after 1972
+
+But remember --- before-after comparisons aren't causal effects
+
+- Want to know the counterfactual, what if US hadn't intervened?
+- Could look at trends in other countries
+- ... but Japan wasn't chosen for "treatment" at random
+
+Think about the problem from DiD perspective
+
+- Would need to assume parallel trends for causal inference
+- Pretty sketchy when "treatment group" is just one observation!
+
+## Pre-treatment trends are not parallel
+
+```{r}
+#| echo: false
+df_nuclear <- df_nuclear |>
+  mutate(Country = if_else(ccode == 0, "Japan", "Others"))
+df_avg <- df_nuclear |>
+  filter(Country == "Others") |>
+  group_by(year) |>
+  summarize(nuclear_capacity = mean(nuclear_capacity, na.rm = TRUE)) |>
+  add_column(ccode = 1)
+df_nuclear |>
+  ggplot(aes(x = year, y = nuclear_capacity, group = ccode)) +
+  geom_line(aes(alpha = Country, size = Country, color = Country)) +
+  geom_line(
+    data = df_avg,
+    size = 2,
+    color = "black"
+  ) +
+  geom_vline(aes(xintercept = 1972), color = "red") +
+  scale_alpha_manual(values = c("Japan" = 1, "Others" = 0.05)) +
+  scale_size_manual(values = c("Japan" = 2, "Others" = 0.5)) +
+  scale_color_manual(values = c("Japan" = "blue", "Others" = "black")) +
+  labs(
+    x = "Year",
+    y = "Nuclear capacity"
+  )
+```
+
+# The synthetic control method
+
+## Data requirements
+
+Observe outcome $Y_{j, t}$ in $J + 1$ units over $T$ time periods
+
+Unit 0 is eventually treated, units 1 through J are never treated
+
+Treatment happens at time $t^*$, in the middle of observation period
+
+**Causal question:** At each time $t > t^*$, how much more/less is $Y_{0, t}$ compared to counterfactual world where treatment wasn't applied?
+
+**Key problem:** Constructing no-treatment counterfactual for treated unit
+
+## The synthetic control method
+
+How to construct the no-treatment counterfactual?
+
+- Use a **weighted average** of never-treated units
+- Want to focus on most similar never-treated units (akin to matching)
+
+How to select weights on each never-treated unit?
+
+- Look at pre-treatment observed confounders + trend in outcomes
+- Select weights to make these match as closely as possible
+- (There's a *lot* of math we're skipping over)
+
+# Implementing synthetic control in R
+
+## Data
+
+Using subset of Smith and Spaniel's replication data
+
+- "Smith" = Vandy prof Brad Smith, you might have learned about game theory from him
+- See Quarto source code for obtaining + cleaning
+
+```{r}
+df_nuclear
+```
+
+## Setting up the synthetic control analysis in R
+
+Using the `tidysynth` package
+
+```{r}
+library("tidysynth")
+```
+
+Start by telling it the data source + key elements of analysis
+
+```{r synth_base}
+synth_base <- df_nuclear |>
+  synthetic_control(
+    outcome = nuclear_capacity,   # outcome variable
+    unit = state_abb,             # unit ID
+    time = year,                  # time ID
+    i_unit = "JPN",               # which unit ID is treated?
+    i_time = 1972                 # when does treatment start?
+  )
+```
+
+## Constructing the synthetic control
+
+Matching on democracy, urbanization, development, trade openness in pre-1972 period
+
+Also matching on nuclear capacity as of 1955 and 1965
+
+```{r}
+#| cache: true
+synth_final <- synth_base |>
+  generate_predictor(
+    time_window = 1952:1971,
+    democracy = mean(democracy, na.rm = TRUE),
+    log_urban_pop = mean(log_urban_pop, na.rm = TRUE),
+    log_gdp = mean(log_gdp, na.rm = TRUE),
+    openness = mean(openness, na.rm = TRUE)
+  ) |>
+  generate_predictor(time_window = 1955, nuke55 = nuclear_capacity) |>
+  generate_predictor(time_window = 1965, nuke65 = nuclear_capacity) |>
+  generate_weights() |>
+  generate_control()
+```
+
+## Looking at the weights
+
+:::: {.columns}
+::: {.column}
+What combination of units will we use to construct the counterfactual?
+
+```{r}
+grab_unit_weights(synth_final) |>
+  arrange(desc(weight))
+```
+:::
+::: {.column .fragment}
+Which variables were most relevant in coming up with the unit weights?
+
+```{r}
+grab_predictor_weights(synth_final) |>
+  arrange(desc(weight))
+```
+:::
+::::
+
+## Constructing the counterfactual
+
+```{r}
+#| echo: false
+df_nuclear |>
+  ggplot(aes(x = year, y = nuclear_capacity, group = ccode)) +
+  geom_line(aes(alpha = Country, size = Country, color = Country)) +
+  geom_vline(aes(xintercept = 1972), color = "red") +
+  scale_alpha_manual(values = c("Japan" = 1, "Others" = 0.05)) +
+  scale_size_manual(values = c("Japan" = 2, "Others" = 0.5)) +
+  scale_color_manual(values = c("Japan" = "blue", "Others" = "black")) +
+  scale_y_continuous(limits = c(-2, 2)) +
+  labs(
+    x = "Year",
+    y = "Nuclear capacity"
+  )
+```
+
+## Constructing the counterfactual {visibility="uncounted"}
+
+```{r}
+#| echo: false
+df_nuclear |>
+  filter(state_abb %in% c("JPN", "ITA", "IND", "FRN")) |>
+  mutate(
+    Country = case_match(
+      state_abb,
+      "JPN" ~ "Japan",
+      "ITA" ~ "Italy",
+      "IND" ~ "India",
+      "FRN" ~ "France"
+    ) |> fct_relevel("Japan")
+  ) |>
+  ggplot(aes(x = year, y = nuclear_capacity)) +
+  geom_line(aes(color = Country, size = Country)) +
+  geom_vline(aes(xintercept = 1972), color = "red") +
+  scale_size_manual(values = c("Japan" = 2, "Italy" = 2 * 0.813, "India" = 2 * 0.137, "France" = 2 * 0.0493)) +
+  scale_color_manual(values = c("Japan" = "blue", "Italy" = "gray50", "India" = "gray50", "France" = "gray50")) +
+  scale_y_continuous(limits = c(-2, 2)) +
+  labs(
+    x = "Year",
+    y = "Nuclear capacity"
+  )
+```
+
+## Estimating the effect of treatment
+
+```{r}
+plot_trends(synth_final)
+```
+
+## Checking balance
+
+```{r}
+grab_balance_table(synth_final)
+```
+
+## Is the effect significant?
+
+Inherently hard to calculate statistical significance when there's only one treated unit
+
+Traditional hypothesis test: How big is the effect, vs what we'd expect just due to random chance?
+
+**Placebo test** approach for synthetic control
+
+1. Rerun analysis repeatedly, as if each control unit were treated at $t^*$
+2. Look at distribution of estimated "effects" where truth should be 0
+3. Compare our main effect estimate to this distribution
+   - Main estimate is an outlier $\leadsto$ significant
+   - Main estimate is in middle of dist $\leadsto$ not significant
+
+## Distribution of placebo effects
+
+```{r}
+plot_placebos(synth_final, prune = FALSE)
+```
+
+## Formal significance test
+
+```{r}
+grab_significance(synth_final) |>
+  arrange(desc(unit_name == "JPN"))
+```
+
+(Take this more as a gut check than as a super precise test)
+
+
+# Wrapping up
+
+## Treatment effect estimation: Comparing the options
+
+You've learned about a lot of different ways to do causal analyses!
+
+| Method              | Key assumptions                                                    | Pros                                               | Cons                                                                             |
+| :------------------ | :----------------------------------------------------------------- | :------------------------------------------------- | :------------------------------------------------------------------------------- |
+| Difference in means | Random assignment                                                  | No fancy adjustments needed, small standard errors | Expensive or infeasible for many causal questions                                |
+| Matching            | All confounders measured                                           | Easy to calculate and to assess balance            | Many ways to match, curse of dimensionality, unlikely to measure all confounders |
+| Regression          | All confounders measured, linear relationship b/w them and outcome | Flexible, easy to interpret                        | Linear extrapolation can be problematic, unlikely to measure all confounders     |
+
+: {tbl-colwidths="[20, 20, 30, 30]"}
+
+## Treatment effect estimation: Comparing the options
+
+| Method                    | Key assumptions                                            | Pros                                                                            | Cons                                                                                                                              |
+| :------------------------ | :--------------------------------------------------------- | :------------------------------------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------- |
+| Instrumental variables    | Instrument not confounded, doesn't directly affect outcome | Can leverage random influence on nonrandom treatment                            | Assumptions very stringent, standard errors large if instrument weak, effective sample (compliers) not necessarily representative |
+| Regression discontinuity  | Treatment "jumps" with running variable, confounders don't | Easy to assess balance, easy to see where causal estimate comes from            | Possible sensitivity of estimate to bandwidth, effective sample (running $\approx$ 0) not necessarily representative              |
+| Difference in differences | Parallel trends in potential outcome if untreated          | Widely applicable with panel data, easy to see where causal estimate comes from | Requires repeated observation of same units, parallel trends sketchy if other things changing when treatment is switched on       |
+
+: {tbl-colwidths="[20, 20, 30, 30]"}
+
+## Plan for the rest of the semester
+
+- Mon 4/14: Presentations of final projects
+  - Should be 10-12 minutes each
+  - Main points to hit: your causal question, your data, how you identify a causal effect, your main findings
+- Weds 4/16: Likely no class
+- Weds 4/23: Final paper and revision memo due
+
